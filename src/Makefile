@@ -11,12 +11,14 @@ MODULES = \
 	eproc \
 	epxview \
 	epx_pixels \
-	epx_QR \
 	epx_anim_test \
 	epx_sprite \
 	epx_router \
 	epx_zimage \
 	epx_graph
+
+# depend on other stuff - optional build
+BAD_MODULES = epx_QR 
 
 
 EBIN = ../ebin

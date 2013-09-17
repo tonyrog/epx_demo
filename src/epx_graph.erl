@@ -340,7 +340,7 @@ sample_process(P,G) ->
     epx_gc:set_foreground_color(G#epx_graph.foreground),
     sample_process(P,G,0,V0,T0).
 
-sample_process(P,G,I,Vi,Ti) ->
+sample_process(P,G,I,Vi,_Ti) ->
     Interval = G#epx_graph.sample_interval,
     receive
     after Interval ->
