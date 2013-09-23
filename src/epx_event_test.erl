@@ -73,7 +73,7 @@ text_demo(Filename, Text) ->
     egc:set_font(Font),
     egc:set_foreground_color({0,255,0,0}),
     
-    efnt:draw_string(Pic, 10, FInfo#efont_info.ascent, Text),
+    efnt:draw_string(Pic, 10, FInfo#epx_font_info.ascent, Text),
     epixmap:draw(Pic, Win, 0, 0, 0, 0, 320, 240),
     receive
 	{eevent, Win, close} ->

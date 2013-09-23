@@ -1,0 +1,6 @@
+{application, epx_demo,
+ [{description, "Epx demo code"},
+  {vsn, git},
+  {env, []},
+  {applications,[kernel,stdlib,epx]}
+  ]}.
