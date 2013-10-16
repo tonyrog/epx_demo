@@ -6,7 +6,7 @@
 -module(mandel).
 
 -compile(export_all).
--import(lists, [reverse/1, map/2]).
+-import(lists, [reverse/1, map/2, foreach/2]).
 
 -define(number_float, true).
 %% -define(number_fix, true).
@@ -26,7 +26,7 @@
 	  cl_clu,        %% clu context
 	  cl_program,    %% z2 program
 	  cl_kernel,     %% z2 kernel
-	  cl_queue       %% cl command
+	  cl_queues      %% cl command
 	 }).
 
 -record(view,
@@ -164,9 +164,20 @@ init(X,Y,W,H,Opts) ->
     loop(S1).
 
 init_cl(S) ->
-    case proplists:get_bool(opencl, S#s.opts) of
-	true ->
-	    Clu = clu:setup(cpu),
+    case proplists:get_value(opencl, S#s.opts) of
+	undefined ->
+	    S;
+	Val ->
+	    Clu = case Val of
+		      true -> clu:setup();
+		      gpu -> clu:setup(gpu);
+		      cpu -> clu:setup(cpu);
+		      accel -> clu:setup(accel)
+		  end,
+	    case Clu of
+		{error,Err} -> exit({clu_error, Err});
+		_ -> ok
+	    end,
 	    Filename = filename:join([code:priv_dir(epx_demo),"z2_float.cl"]),
 	    io:format("build: ~s\n", [Filename]),
 	    {ok, Program} = clu:build_source_file(Clu, Filename, 
@@ -175,14 +186,13 @@ init_cl(S) ->
 	    {ok, Kernel} = cl:create_kernel(Program, "z2"),
 	    io:format("kernel created: ~p\n", [Kernel]),
 	    %% Create the command queue for the first device
-	    {ok,Queue} = cl:create_queue(clu:context(Clu),clu:device(Clu),[]),
+	    Qs = [begin {ok,Q}=cl:create_queue(clu:context(Clu),D,[]),Q end ||
+		     D <- clu:device_list(Clu)],
 	    io:format("queue created\n"),
 	    S#s { cl_clu = Clu,
 		  cl_program = Program,
 		  cl_kernel = Kernel,
-		  cl_queue = Queue };
-	false ->
-	    S
+		  cl_queues = Qs }
     end.
 	    
 
@@ -197,7 +207,7 @@ close(S) ->
 	    ok;
        true ->
 	    cl:release_kernel(S#s.cl_kernel),
-	    cl:release_queue(S#s.cl_queue),
+	    lists:foreach(fun(Q) -> cl:release_queue(Q) end, S#s.cl_queues),
 	    cl:release_program(S#s.cl_program),
 	    clu:teardown(S#s.cl_clu),
 	    ok
@@ -525,54 +535,77 @@ draw_cl(Pix,Xs,Ys,P,S) ->
     Y0 = as_float(P#view.y0),  %% force float
     W = P#view.w,
     H = P#view.h,
-    N = W * H,
-    {ok,Output} = cl:create_buffer(clu:context(S#s.cl_clu),[read_write],N*4),
-    io:format("output memory created\n"),
-    %% 
-    %% Must be serialized (if parallel)  
-    %% __kernel void z2(const float x, const float y, 
-    %%		 const float xs, const float ys, 
-    %%		 const unsigned int n,
-    %%		 __global unsigned int* out)
-    %%
-    clu:apply_kernel_args(S#s.cl_kernel,
-			  [{float,X0}, {float,Y0},
-			   {float,as_float(Xs)},{float,as_float(Ys)},
-			   {uint,W},{uint,H},
-			   {uint,P#view.iter},Output]),
-
-%%    {ok,Local} = cl:get_kernel_workgroup_info(S#s.cl_kernel,
-%%					      clu:device(S#s.cl_clu),
-%%					      work_group_size),
-    io:format("global = ~w,~w\n", [W,H]),
-    %% Max work group size
-    {ok,MaxWorkGroupSize} = cl:get_device_info(clu:device(S#s.cl_clu),
-					       max_work_group_size),
-    io:format("max_work_group_size = ~w\n", [MaxWorkGroupSize]),
-    {ok,[LW,LH|_]} = cl:get_device_info(clu:device(S#s.cl_clu),
-					max_work_item_sizes),
-    io:format("1.local = ~w,~w\n", [LW,LH]),
-    LW1 = imath:gcd(LW, W),
-    LH1 = imath:gcd(LH, H),
-    io:format("2.local = ~w,~w\n", [LW1,LH1]),
-    {LW2,LH2} = scale_down_work_item_sizes(LW1,LH1,MaxWorkGroupSize),
-    io:format("3.local = ~w,~w\n", [LW2,LH2]),
-    %% Local1 = 1,
-    Global = [W, H],
-    {ok,Event1} = cl:enqueue_nd_range_kernel(S#s.cl_queue,
-					     S#s.cl_kernel,
-					     Global, [LW2,LH2], []),
-    io:format("kernel queued event1 = ~p\n", [Event1]),
-    {ok,Event2} = cl:enqueue_read_buffer(S#s.cl_queue,Output,0,N*4,[Event1]),
-    io:format("read buffer queued event1 = ~p\n", [Event1]),
-    ok = cl:flush(S#s.cl_queue),
+    %% N = W * H,
+    Ctx = clu:context(S#s.cl_clu),
+    Qs  = S#s.cl_queues,
+    Ds  = clu:device_list(S#s.cl_clu),
+    NumDevices = length(Ds),
+    Hi  = (H+NumDevices-1) div NumDevices,
+    VHi = (as_float(P#view.y1) - as_float(P#view.y0))/NumDevices,
+    %% number of buffer bytes per device
+    NumBytes = Hi*W*4,
+    Bufs =
+	[begin
+	     {ok,Buf} = cl:create_buffer(Ctx,[read_write],NumBytes),Buf
+	 end || _ <- lists:seq(1,NumDevices)],
+    
+    Es = 
+	[begin
+	     io:format("device = ~p\n", [D]),
+	     Yi = Y0+I*VHi,
+	     io:format("X0,Y0 = ~w, Hi=~w\n", [{X0,Yi},Hi]),
+	     clu:apply_kernel_args(S#s.cl_kernel,
+				   [{float,X0}, {float,Yi},
+				    {float,as_float(Xs)},{float,as_float(Ys)},
+				    {uint,W},{uint,Hi},
+				    {uint,P#view.iter},Buf]),
+	     io:format("global = ~w,~w\n", [W,H]),
+	     %% Max work group size
+	     {ok,MaxWorkGroupSize} = cl:get_device_info(D,max_work_group_size),
+	     io:format("max_work_group_size = ~w\n", [MaxWorkGroupSize]),
+	     {ok,[LW,LH|_]} = cl:get_device_info(D, max_work_item_sizes),
+	     io:format("1.local = ~w,~w\n", [LW,LH]),
+	     LW1 = imath:gcd(LW, W),
+	     LH1 = imath:gcd(LH, H),
+	     io:format("2.local = ~w,~w\n", [LW1,LH1]),
+	     {LW2,LH2} = scale_down_work_item_sizes(LW1,LH1,MaxWorkGroupSize),
+	     io:format("3.local = ~w,~w\n", [LW2,LH2]),
+	     %% Local1 = 1,
+	     Global = [W, H],
+	     {ok,Event1} = cl:enqueue_nd_range_kernel(Q,
+						      S#s.cl_kernel,
+						      Global, [LW2,LH2], []),
+	     io:format("kernel queued event1 = ~p\n", [Event1]),
+	     {ok,Event2} = cl:enqueue_read_buffer(Q,Buf,0,NumBytes,[Event1]),
+	     io:format("read buffer queued event2 = ~p\n", [Event2]),
+	     {Event1,Event2}
+	 end || {I,D,Q,Buf} <- zip(lists:seq(0, NumDevices-1), Ds, Qs, Bufs)],
+    lists:foreach(fun(Q) -> cl:flush(Q) end, Qs),
     io:format("flushed\n"),
-    io:format("Event1 = ~p\n", [cl:wait(Event1,1000)]),
-    {ok,OutData} = cl:wait(Event2,3000),
-    %% io:format("OutData: ~p\n", [OutData]),
-    Pixels = [ get_color(D,S#s.colors) || <<D:32/native>> <= OutData ],
-    epx:pixmap_put_pixels(Pix,P#view.x,P#view.y,P#view.w,P#view.h,argb,Pixels),
-    cl:release_mem_object(Output).
+    map(fun({E1,_}) ->  
+		cl:wait(E1,1000)
+	end, Es),
+    io:format("calculations are done\n"),
+    PixelsLists =
+	map(fun({_,E2}) ->
+		    {ok,OutData} = cl:wait(E2,3000),
+		    [ get_color(D,S#s.colors) || <<D:32/native>> <= OutData ]
+	    end, Es),
+    io:format("got pixles\n"),
+    foreach(
+      fun({I,Pixels}) ->
+	      epx:pixmap_put_pixels(Pix,
+				    P#view.x,P#view.y+I*Hi,
+				    P#view.w,Hi,argb,Pixels)
+      end, lists:zip(lists:seq(0,NumDevices-1), PixelsLists)),
+
+    foreach(fun(Buf) -> cl:release_mem_object(Buf) end, Bufs).
+
+zip([A|As],[B|Bs],[C|Cs],[D|Ds]) ->
+    [{A,B,C,D} | zip(As,Bs,Cs,Ds)];
+zip([],[],[],[]) ->
+    [].
+
 
 scale_down_work_item_sizes(1,  H,  Max) -> {1,min(H,Max)};
 scale_down_work_item_sizes(W,  1,  Max) -> {min(W,Max),1};
