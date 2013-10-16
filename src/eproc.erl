@@ -108,7 +108,7 @@ init(W, H) ->
 	      lists:foreach(fun(ID) -> do_link(EWin, Pid, ID) end, Links)
       end, processes()),
 
-    {_, Rt} = statistics(runtime),
+    %% {_, Rt} = statistics(runtime),
     erlang:start_timer(100, self(), redraw),
     loop(EWin).
 
@@ -159,7 +159,7 @@ calc_p_radius(P) ->
        H > 0 -> trunc(math:log(H)*2)
     end.
 
-draw_p(W, P, Td) ->
+draw_p(W, P, _Td) ->
     if is_pid(P#p.id) ->
 	    epx_gc:set_foreground_color({0,255,255,255}),
 	    X = trunc(P#p.x),
@@ -266,7 +266,7 @@ draw_cl(W, C) ->
 
 redraw(W) ->
     Td = timer:now_diff(erlang:now(), W#w.t_redraw),
-    {_, Rt} = statistics(runtime),
+    %% {_, Rt} = statistics(runtime),
     epx_gc:set_font(W#w.font),
     ets:foldl(
       fun(P,_Acc) -> draw_p(W, P, Td) end, 0, W#w.ptab),
@@ -297,7 +297,7 @@ loop(W) ->
 	{trace_ts,ID,out_exited,_,_T} ->
 	    do_exit(W,ID), 
 	    loop(W);
-	{trace_ts,ID,spawn,ID2,_Mfa,_T} ->
+	{trace_ts,_ID,spawn,ID2,_Mfa,_T} ->
 	    P = new_p(W, ID2),
 	    insert_p(W, P),
 	    loop(W);
@@ -313,7 +313,7 @@ loop(W) ->
 	{trace_ts,ID,unlink,ID2,_T} ->
 	    do_unlink(W, ID, ID2),
 	    loop(W);	    
-	{trace_ts,ID,open,ID2,_Name,_T} ->
+	{trace_ts,_ID,open,ID2,_Name,_T} ->
 	    P = new_p(W, ID2),
 	    insert_p(W, P),
 	    loop(W);
@@ -379,7 +379,7 @@ do_link(W, ID1, ID2) ->
     case {ets:lookup(W#w.ptab, ID1),ets:lookup(W#w.ptab, ID2)} of
 	{[],_} ->    ok;
 	{_,[]} ->    ok;
-	{[P1],[P2]} ->
+	{[_P1],[_P2]} ->
 	    Key = ckey(ID1,ID2),
 	    case ets:lookup(W#w.ctab, Key) of
 		[] ->
@@ -397,7 +397,7 @@ do_unlink(W, ID1, ID2) ->
     case {ets:lookup(W#w.ptab, ID1),ets:lookup(W#w.ptab, ID2)} of
 	{[],_} ->    ok;
 	{_,[]} ->    ok;
-	{[P1],[P2]} ->
+	{[_P1],[_P2]} ->
 	    Key = ckey(ID1,ID2),
 	    case ets:lookup(W#w.ctab, Key) of
 		[] ->
@@ -431,7 +431,7 @@ do_out(W, Pid, T) ->
 	    W#w { t_sum = WT_sum }
     end.
 
-lookup_p(W, undefined) ->
+lookup_p(_W, undefined) ->
     undefined;
 lookup_p(W, Id) when is_atom(Id) ->
     lookup_p(W, whereis(Id));
