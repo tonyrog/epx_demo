@@ -82,11 +82,16 @@ interfaces() ->
     interfaces(IFs).
 
 interfaces(IFs) ->
+    {Probe,Field} =
+	case os:type() of
+	    {unix,linux}  -> {netlink_stat, ".rx_bytes"};
+	    {unix,darwin} -> {sysctl_net, ".ibytes"}
+	end,
     MaxBytesPerSec = (2*1024*1024) div 8,  %% assume max around 2Mbit
     Counters =
 	[ {counter,
-	   [{name,I++".ibytes"},
-	    {probe,sysctl_net},
+	   [{name,I++Field},
+	    {probe,Probe},
 	    {width, 300},
 	    {sample_interval, 100},
 	    {foreground, red},
