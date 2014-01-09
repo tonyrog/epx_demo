@@ -7,46 +7,96 @@
 
 -module(epx_QR).
 
-
-%% Shows how to achieve HOTP/SHA1 with a mobile phone using Google Authenticator.
-%%
-%% This module is a rag-bag of supporting functions, many of which are simplified 
-%% extracts from the core libs (?_common, ?_crypto, ?_math, ?_image). This is to 
-%% allow a full-cycle demo without requiring open-sourcing of the entire platform.
-%% 
-%% @ref QR Code: ISO/IEC 18004 (2000, 1st Edition)
-
-%% Google Authenticator Phone App 
-%% iPhone:  <http://itunes.apple.com/us/app/google-authenticator/id388497605?mt=8>
-%% Android: <https://market.android.com/details?id=com.google.android.apps.authenticator>
-
-%% Google Authenticator URL Specification 
-% @ref <http://code.google.com/p/google-authenticator/wiki/KeyUriFormat>
-%  otpauth://TYPE/LABEL?PARAMETERS
-%  TYPE: hotp | totp
-%  LABEL: string() (usually email address)
-%  PARAMETERS:
-%    digits = 6 | 8 (default 6)
-%    counter = integer() (hotp only, default 0?)
-%    period = integer() (in seconds, totp only, default 30)
-%    secret = binary() base32 encoded
-%    algorithm = MD5 | SHA1 | SHA256 | SHA512 (default SHA1)
-
-
--include_lib("qrcode/src/qrcode.hrl").
+-include_lib("qrcode/include/qrcode.hrl").
 
 -compile(export_all).
 
 -define(TTY(Term), io:format(user, "[~p] ~p~n", [?MODULE, Term])).
 
+-record(tick,
+	{
+	  window,
+	  bg,
+	  width,
+	  height,
+	  scale = 1,
+	  password = <<"">>
+	}).
+
+tick() ->
+    loop(4, 1000).
+
+tick(Scale,RefreshIval) ->
+    tick(Scale,RefreshIval,<<"password">>).
+tick(Scale,RefreshIval,Password) ->
+    tick(Scale,RefreshIval,Password,fun() -> format_datetime() end).
+
+tick(Scale,RefreshIval,Password,Fun) ->
+    epx:start(),
+    {Width,Height} = tick_size(Scale),
+    Win = epx:window_create(50, 50, Width, Height),
+    epx:window_attach(Win),
+    Bg = epx:pixmap_create(Width, Height, argb),
+    epx:pixmap_fill(Bg, {255,255,255,255}),
+    epx:pixmap_attach(Bg),
+    Tick = #tick { window=Win,bg=Bg,scale=Scale,
+		   password=Password,
+		   width=Width, height=Height },
+    tick_update(Tick, Fun),
+    tick_loop(Tick,RefreshIval,Fun).
+
+
+tick_loop(Tick,Refresh,Fun) ->
+    receive
+	{epx_event,Win,close} when Win =:= Tick#tick.window ->
+	    epx:pixmap_detach(Tick#tick.bg),
+	    epx:window_detach(Tick#tick.window)
+    after Refresh ->
+	    tick_update(Tick, Fun),
+	    tick_loop(Tick, Refresh, Fun)
+    end.
+
+tick_size(Scale) ->
+    Dummy = epx_plot(Scale,qrcode:encode(<<>>)),
+    W = epx:pixmap_info(Dummy, width),
+    H = epx:pixmap_info(Dummy, height),
+    {W + Scale*10, H + Scale*10 }.
+
+tick_update(Tick,Fun) ->
+    Data = Fun(),
+    QRCode = qrcode:encode(iolist_to_binary(Data)),
+    Image = epx_plot(Tick#tick.scale,QRCode),
+    W = epx:pixmap_info(Image, width),
+    H = epx:pixmap_info(Image, height),
+    epx:pixmap_copy_area(Image, Tick#tick.bg, 0, 0, 
+			 Tick#tick.scale*5, Tick#tick.scale*5, W, H),
+    epx:pixmap_draw(Tick#tick.bg, Tick#tick.window, 
+		    0, 0, 0, 0, Tick#tick.width, Tick#tick.height).
+
+format_datetime() ->
+    format_datetime(datetime()).
+format_datetime({{YYYY,MM,DD},{H,M,S}}) ->
+    %% fixme: cache date part in process dict?
+    [d4(YYYY),$-,d2(MM),$:,d2(DD),$T,d2(H),$:,d2(M),$:,d2(S)].
+
+d2(X) when is_integer(X), X >= 0, X < 100 ->
+    tl(integer_to_list(100+X)).
+
+d4(X) when is_integer(X), X >= 0, X < 10000 ->
+    tl(integer_to_list(10000+X)).
+
+datetime() ->
+    calendar:now_to_datetime(os:timestamp()).
+    
+
 run() ->
     run(1).
 
 run(Scale) ->
-    Passcode = crypto:sha(<<"password">>),
+    Passcode = crypto:hash(sha, <<"password">>),
     run(Scale, <<"demo@mydomain.com">>, Passcode, 60).
 
-run(Scale,Domain, Passcode, Seconds) ->
+run(Scale,Domain,Passcode,Seconds) ->
     PasscodeBase32 = base32:encode(Passcode),
     Period = list_to_binary(integer_to_list(Seconds)),
     Token = <<"otpauth://totp/", Domain/binary, "?period=", Period/binary, 
@@ -66,7 +116,6 @@ mail(Scale, Addr) ->
     QRCode = qrcode:encode(list_to_binary([Addr])),
     Image = epx_plot(Scale,QRCode),
     show(Scale,Image).
-
 
 show(Scale,Image) ->
     epx:start(),
@@ -127,7 +176,7 @@ put_pixel_bits(<<0:1, Bits/bits>>, Scale, Y, X, Xmax, Pixmap) ->
 
 %%
 totp() ->
-    Key = crypto:sha(<<"password">>),	
+    Key = crypto:hash(sha, <<"password">>),	
     totp(Key, 60).
 totp(Key, Period) ->
     T = unow() div Period,
@@ -135,7 +184,7 @@ totp(Key, Period) ->
 %% RFC-4226 "HOTP: An HMAC-Based One-Time Password Algorithm"
 %% @ref <http://tools.ietf.org/html/rfc4226>
 hotp(Key, Count) when is_binary(Key), is_integer(Count) ->
-    HS = crypto:sha_mac(Key, <<Count:64>>),
+    HS = crypto:hmac(sha, Key, <<Count:64>>),
     <<_:19/binary, _:4, Offset:4>> = HS,
     <<_:Offset/binary, _:1, P:31, _/binary>> = HS,
     HOTP = integer_to_list(P rem 1000000),
