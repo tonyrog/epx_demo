@@ -24,7 +24,7 @@
 	}).
 
 tick() ->
-    loop(4, 1000).
+    tick(4, 1000).
 
 tick(Scale,RefreshIval) ->
     tick(Scale,RefreshIval,<<"password">>).
@@ -33,7 +33,7 @@ tick(Scale,RefreshIval,Password) ->
 
 tick(Scale,RefreshIval,Password,Fun) ->
     epx:start(),
-    {Width,Height} = tick_size(Scale),
+    {Width,Height} = tick_size(Scale,Fun),
     Win = epx:window_create(50, 50, Width, Height),
     epx:window_attach(Win),
     Bg = epx:pixmap_create(Width, Height, argb),
@@ -56,13 +56,15 @@ tick_loop(Tick,Refresh,Fun) ->
 	    tick_loop(Tick, Refresh, Fun)
     end.
 
-tick_size(Scale) ->
-    Dummy = epx_plot(Scale,qrcode:encode(<<>>)),
+tick_size(Scale,Fun) ->
+    Data = Fun(),
+    Dummy = epx_plot(Scale,qrcode:encode(iolist_to_binary(Data))),
     W = epx:pixmap_info(Dummy, width),
     H = epx:pixmap_info(Dummy, height),
     {W + Scale*10, H + Scale*10 }.
 
 tick_update(Tick,Fun) ->
+    io:format("tick\n"),
     Data = Fun(),
     QRCode = qrcode:encode(iolist_to_binary(Data)),
     Image = epx_plot(Tick#tick.scale,QRCode),
