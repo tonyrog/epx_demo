@@ -57,21 +57,33 @@ tick_loop(Tick,Refresh,Fun) ->
     end.
 
 tick_size(Scale,Fun) ->
-    Data = Fun(),
-    Dummy = epx_plot(Scale,qrcode:encode(iolist_to_binary(Data))),
+    Data = iolist_to_binary(Fun()),
+    Dummy = epx_plot(Scale,qrcode:encode(Data)),
     W = epx:pixmap_info(Dummy, width),
     H = epx:pixmap_info(Dummy, height),
     {W + Scale*10, H + Scale*10 }.
 
 tick_update(Tick,Fun) ->
-    io:format("tick\n"),
-    Data = Fun(),
-    QRCode = qrcode:encode(iolist_to_binary(Data)),
+    Data = iolist_to_binary(Fun()),
+    %% io:format("data: ~p\n", [Data]),
+    QRCode = qrcode:encode(Data),
     Image = epx_plot(Tick#tick.scale,QRCode),
     W = epx:pixmap_info(Image, width),
     H = epx:pixmap_info(Image, height),
-    epx:pixmap_copy_area(Image, Tick#tick.bg, 0, 0, 
-			 Tick#tick.scale*5, Tick#tick.scale*5, W, H),
+    X0 = Tick#tick.scale*5,
+    Y0 = Tick#tick.scale*5,
+    ClockH = 32,
+    ClockW = 32,
+    Clock = epx:pixmap_create(ClockH,ClockW),
+    epx:pixmap_fill(Clock, {0, 255,255,255}),  %% white transparent
+    draw_clock(Clock),
+
+    epx:pixmap_copy_area(Image, Tick#tick.bg, 0, 0, X0, Y0, W, H),
+
+    epx:pixmap_copy_area(Clock, Tick#tick.bg, 0, 0, 
+			 X0+(W-ClockW) div 2, Y0+(H-ClockH) div 2,
+			 ClockW, ClockH, [blend]),
+
     epx:pixmap_draw(Tick#tick.bg, Tick#tick.window, 
 		    0, 0, 0, 0, Tick#tick.width, Tick#tick.height).
 
@@ -89,7 +101,6 @@ d4(X) when is_integer(X), X >= 0, X < 10000 ->
 
 datetime() ->
     calendar:now_to_datetime(os:timestamp()).
-    
 
 run() ->
     run(1).
@@ -109,13 +120,13 @@ run(Scale,Domain,Passcode,Seconds) ->
     show(Scale,Image).
 
 mail() ->
-    mail(2, "mailto:tony@rogvall.se").
+    data(2, "mailto:tony@rogvall.se").
 
 mail(Addr) ->
-    mail(1, Addr).
+    data(1, Addr).
 
-mail(Scale, Addr) ->
-    QRCode = qrcode:encode(list_to_binary([Addr])),
+data(Scale, Data) ->
+    QRCode = qrcode:encode(erlang:iolist_to_binary(Data)),
     Image = epx_plot(Scale,QRCode),
     show(Scale,Image).
 
@@ -132,9 +143,6 @@ show(Scale,Image) ->
     epx:pixmap_attach(Bg),
     epx:pixmap_copy_area(Image, Bg, 0, 0, Scale*5, Scale*5, W, H),
     epx:pixmap_draw(Bg, Win, 0, 0, 0, 0, Width, Height),
-    loop(Bg,Win).
-
-loop(Bg,Win) ->
     receive
 	{epx_event,Win,close} ->
 	    epx:pixmap_detach(Bg),
@@ -198,3 +206,32 @@ hotp(Key, Count) when is_binary(Key), is_integer(Count) ->
 unow() ->
     calendar:datetime_to_gregorian_seconds(calendar:universal_time()) - 
 	?UNIX_TIME_ZERO.
+
+%% draw a simple 12 hour clock
+draw_clock(Dst) ->
+    draw_clock(Dst,time()).
+
+draw_clock(Dst, {Hour24,Minute,Second}) ->
+    W = epx:pixmap_info(Dst, width),
+    H = epx:pixmap_info(Dst, height),
+    epx_gc:set_fill_style(solid),
+    epx_gc:set_fill_color(black),
+    epx:draw_ellipse(Dst, 0, 0, W, H),
+    epx_gc:set_fill_color(white),
+    epx:draw_ellipse(Dst, 2, 2, W-4, H-4),
+    X = W div 2,
+    Y = H div 2,
+    Hour12 = Hour24 rem 12,
+    PI2 = 2*math:pi(),
+    PI3H = 3*(math:pi()/2),
+    epx_gc:set_foreground_color(black),
+    draw_line(Dst, Hour12*(PI2/12)+PI3H, X, Y, X-9),
+    epx_gc:set_foreground_color(blue),
+    draw_line(Dst, Minute*(PI2/60)+PI3H, X, Y, X-6),
+    epx_gc:set_foreground_color(red),
+    draw_line(Dst, Second*(PI2/60)+PI3H, X, Y, X-2).
+
+draw_line(Dst, A, X, Y, L) ->
+    X1 = round(X + math:cos(A)*L),
+    Y1 = round(Y + math:sin(A)*L),
+    epx:draw_line(Dst, X, Y, X1, Y1).
