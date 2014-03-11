@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : edraw.erl
 %%% Author  : Tony Rogvall <tony@rogvall.se>
-%%% Description : drawing with epic
+%%% Description : drawing with epx
 %%%
 %%% Created :  9 Jun 2009 by Tony Rogvall <tony@rogvall.se>
 %%%-------------------------------------------------------------------
@@ -973,7 +973,7 @@ segment_y(#round { y=X }) -> X.
 vline(Pix,I,Ys,X,Y) ->
     if I =< 0 -> ok;
        true ->
-	    epixmap:draw_point(Pix, X, Y+Ys),
+	    epx:draw_point(Pix, X, Y+Ys),
 	    vline(Pix,I-1,Ys,X,Y+Ys)
     end.
 
@@ -982,7 +982,7 @@ hline(Pix,I,Xs,X,Y) ->
     if I =< 0 ->
 	    ok;
        true ->
-	    epixmap:draw_point(Pix, X, Y),
+	    epx:draw_point(Pix, X, Y),
 	    hline(Pix,I-1,Xs,X+Xs,Y)
     end.
 

@@ -19,30 +19,64 @@
 	  bg,
 	  width,
 	  height,
-	  scale = 1,
-	  password = <<"">>
+	  options = []
 	}).
-
+%%
+%% https://www.google.com/maps/place/@59.3208312,18.3671926,17z
+%%
 tick() ->
-    tick(4, 1000).
+    tick([{scale,4},
+	  {refresh,1000},
+	  {url,"http://rogvall.dyndns-at-home.com:8182/set.yaws"},
+	  {id, "rogvall"},
+	  {password,"hello"},
+	  {long, 59.3208312},
+	  {lat,18.3671926}
+	 ]).
 
-tick(Scale,RefreshIval) ->
-    tick(Scale,RefreshIval,<<"password">>).
-tick(Scale,RefreshIval,Password) ->
-    tick(Scale,RefreshIval,Password,fun() -> format_datetime() end).
+tick(Options) ->
+    tick(Options, 
+	 fun(Data) ->
+		 String = tick_string(Data),
+		 io:format("data: ~p\n", [String]),
+		 String
+	 end).
 
-tick(Scale,RefreshIval,Password,Fun) ->
+tick_string(Data) ->
+    Url = proplists:get_value(url, Data, ""),
+    ID  = proplists:get_value(id,  Data, ""),
+    Password = proplists:get_value(password,Data,""),
+%%    Long = proplists:get_value(long, Data, 0.0),
+%%    Lat  = proplists:get_value(lat,  Data, 0.0),
+    Now = format_datetime(),
+    Params = ["id=",ID,"&",
+%%	      "lon=",io_lib_format:fwrite_g(Long),"&",
+%%	      "lat=",io_lib_format:fwrite_g(Lat),"&",
+	      "time=",Now
+	     ],
+    Sha = crypto:hash(sha, [Url,Params,Password]),
+    lists:flatten(
+      [Url,"/?",Params,"&","sha=",
+       [ [if H>9 -> (H-9)+$A; true -> H+$0 end,
+	  if L>9 -> (L-9)+$A; true -> L+$0 end ]
+	 || <<H:4,L:4>> <= Sha ]]).
+
+    
+
+tick(Options,Fun) ->
     epx:start(),
-    {Width,Height} = tick_size(Scale,Fun),
+    Scale = proplists:get_value(scale,Options,1),
+    {Width,Height} = tick_size(Scale,Options,Fun),
     Win = epx:window_create(50, 50, Width, Height),
     epx:window_attach(Win),
     Bg = epx:pixmap_create(Width, Height, argb),
     epx:pixmap_fill(Bg, {255,255,255,255}),
     epx:pixmap_attach(Bg),
-    Tick = #tick { window=Win,bg=Bg,scale=Scale,
-		   password=Password,
-		   width=Width, height=Height },
+    Tick = #tick { window=Win,bg=Bg,
+		   width=Width, height=Height,
+		   options = Options },
     tick_update(Tick, Fun),
+    RefreshIval = proplists:get_value(refresh,Options,1000),
     tick_loop(Tick,RefreshIval,Fun).
 
 
@@ -56,22 +90,24 @@ tick_loop(Tick,Refresh,Fun) ->
 	    tick_loop(Tick, Refresh, Fun)
     end.
 
-tick_size(Scale,Fun) ->
-    Data = iolist_to_binary(Fun()),
+tick_size(Scale,Options,Fun) ->
+    Data = iolist_to_binary(Fun(Options)),
     Dummy = epx_plot(Scale,qrcode:encode(Data)),
     W = epx:pixmap_info(Dummy, width),
     H = epx:pixmap_info(Dummy, height),
     {W + Scale*10, H + Scale*10 }.
 
 tick_update(Tick,Fun) ->
-    Data = iolist_to_binary(Fun()),
+    Options = Tick#tick.options,
+    Scale   = proplists:get_value(scale, Options, 1),
+    Data = iolist_to_binary(Fun(Options)),
     %% io:format("data: ~p\n", [Data]),
     QRCode = qrcode:encode(Data),
-    Image = epx_plot(Tick#tick.scale,QRCode),
+    Image = epx_plot(Scale,QRCode),
     W = epx:pixmap_info(Image, width),
     H = epx:pixmap_info(Image, height),
-    X0 = Tick#tick.scale*5,
-    Y0 = Tick#tick.scale*5,
+    X0 = Scale*5,
+    Y0 = Scale*5,
     ClockH = 32,
     ClockW = 32,
     Clock = epx:pixmap_create(ClockH,ClockW),
