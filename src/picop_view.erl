@@ -12,7 +12,7 @@
 -define(X_OFFS,  20).
 -define(Y_OFFS,  20).
 -define(X_SPACE, 20).
--define(Y_MENU,  50).
+-define(Y_MENU,  100).
 %%
 %% render image A and image B and the operation result C
 %% images should be 128x128 in size
@@ -44,6 +44,8 @@
 	  background_pixels :: epx:epx_pixmap(),
 	  color_menu= []   :: [#color_item{}],
 	  item_menu = []   :: [#menu_item{}], 
+	  transparency = 127,   %% color transparency
+	  fader = 127,          %% fader value
 	  color_selected = 0 :: integer(),
 	  item_selected = 0 :: integer()
 	}).
@@ -152,13 +154,49 @@ draw_images(S) ->
     epx:pixmap_copy_area(B, S#state.foreground_pixels, 0, 0, X2, Y2, 128, 128,
 			 [blend]),
 
+    Fader = S#state.fader,
+    Transp  = S#state.transparency,
+    Color = if S#state.color_selected =:= 0 ->
+		    {255,0,0,0};
+	       true ->
+		    CItem=lists:nth(S#state.color_selected,
+				    S#state.color_menu),
+		    {Ri,Gi,Bi} = CItem#color_item.color,
+		    {Transp,Ri,Gi,Bi}
+	    end,
     if S#state.item_selected =:= 0 ->
 	    ok;
        true ->
 	    Item=lists:nth(S#state.item_selected, S#state.item_menu),
 	    C = epx:pixmap_copy(B),
-	    epx:pixmap_operation_area(A, C, Item#menu_item.op, 
-				      0, 0, 0, 0, 128, 128),
+	    case Item#menu_item.op of
+		fill ->
+		    epx:pixmap_fill(C, Color);
+		fill_blend ->
+		    epx:pixmap_fill(C, Color, [blend]);
+		sum ->
+		    epx:pixmap_copy_area(A, C, 0, 0, 0, 0, 128, 128, [sum]);
+		blend ->
+		    epx:pixmap_copy_area(A, C, 0, 0, 0, 0, 128, 128, [blend]);
+		shadow ->
+		    epx:pixmap_shadow_area(A, C, 0, 0, 0, 0, 128, 128, []);
+		shadow_blend ->
+		    epx:pixmap_shadow_area(A, C, 0, 0, 0, 0, 128, 128, [blend]);
+		alpha ->
+		    epx:pixmap_alpha_area(A, C, Fader, 0, 0, 0, 0, 128, 128);
+		fade ->
+		    epx:pixmap_fade_area(A, C, Fader, 0, 0, 0, 0, 128, 128);
+		color ->
+		    epx:pixmap_add_color_area(A, C, Fader, Color, 
+					      0, 0, 0, 0, 128, 128,[]);
+		color_blend ->
+		    epx:pixmap_add_color_area(A, C, Fader, Color, 
+					      0, 0, 0, 0, 128, 128, [blend]);
+		
+		Op ->
+		    epx:pixmap_operation_area(A, C, Op, 
+					      0, 0, 0, 0, 128, 128)
+	    end,
 	    epx:pixmap_copy_area(C, S#state.foreground_pixels, 0, 0, 
 				 X3, Y3, 128, 128,
 				 [blend])
@@ -266,10 +304,18 @@ define_menu(S) ->
 	  {"xor", 'xor'},
 	  {"copy", copy},
 	  {"add",  add},
-	  {"sub",  sub}
+	  {"sub",  sub},
+	  {"fill", fill},
+	  {"fill-blend", fill_blend},
+	  {"sum", sum},
+	  {"blend", blend},
+	  {"shadow", shadow},
+	  {"shadow-blend", shadow_blend},
+	  {"alpha", alpha},
+	  {"fade", fade},
+	  {"color", color},
+	  {"color-blend", color_blend}
 	 ],
-    %% fill, fill_blend, copy0, sum, blend, shadow, shadow_blend,
-    %% alpha, fade, color, color_blend
     Ms1 = lists:map(
 	    fun({String,Op}) ->
 		    {String,Op,epx_font:dimension(S#state.font, String)}
