@@ -8,9 +8,6 @@
 -compile(export_all).
 -import(lists, [reverse/1, map/2, foreach/2]).
 
--define(number_float, true).
-%% -define(number_fix, true).
-
 -record(s,
 	{
 	  w,h,           %% width and hieght of window
@@ -23,6 +20,7 @@
 	  bg = {0,0,0},  %% background color
 	  colors,        %% colormap
 	  %% OpenCL stuff (optional)
+	  use_double,    %% if cl_khr_fp64 on all devices used
 	  cl_clu,        %% clu context
 	  cl_program,    %% z2 program
 	  cl_kernel,     %% z2 kernel
@@ -37,6 +35,10 @@
 	  x1,y1,    %% bottom coordinate
 	  iter      %% max iteration
 	 }).
+
+-define(debug(F,A), ok).
+%% -define(debug(F,A), io:format((F),(A))).
+
 
 start() ->
     start([]).
@@ -57,84 +59,11 @@ start(X, Y, W, H, Opts) ->
 examples_dir() ->
     filename:join(code:lib_dir(epx), "examples").
 
-%% number type used for fractal computation
--ifdef(number_float).
-new(A) when is_number(A) -> float(A).
-as_float(A) -> float(A).
-add(A,B)       -> A+B.
-subtract(A,B)  -> A-B.
-divide(A,B)    -> A/B.
-multiply(A,B) -> A*B.
-%% multiply sign of X with A
-msign(X,A) when X < 0 -> -A;
-msign(X,A) when X > 0 ->  A;
-msign(_,_A) -> 0.
-is_less(A,B) -> A < B.
--endif.
-
--ifdef(number_fix).
-
-%% -define(IBITS, 12).  %% -2047 - 2047
-%% -define(FBITS, 52).
-
--define(IBITS, 16).
--define(FBITS, 112).
-
--define(IBASE, (1 bsl ?IBITS)).
--define(FBASE, (1 bsl ?FBITS)).
--define(FIX(I,F), (((I) bsl ?FBITS) bor (F))).
-
-new(F) when is_float(F) ->
-    if F < 0.0 ->
-	    bnot fabs_new(abs(F));
-       true ->
-	    fabs_new(F)
-    end;
-new(I) when is_integer(I) ->
-    if I < 0 ->
-	    bnot abs_new(abs(I));
-       true  ->
-	    abs_new(I)
-    end.
-
-abs_new(Int) when Int >= ?IBASE ->
-    ?FIX(?IBASE-1,0);
-abs_new(Int) ->
-    ?FIX(Int,0).
-
-fabs_new(Float) when Float >= ?IBASE ->
-    I = trunc(Float),
-    Frac = (Float - I),
-    F = trunc(Frac * ?FBASE),
-    ?FIX(?IBASE-1,F);
-fabs_new(Float) ->
-    I = trunc(Float),
-    Frac = (Float - I),    
-    F = trunc(Frac * ?FBASE),
-    ?FIX(I,F).
-
-as_float(A) when A < 0 ->
-    -as_float(-A);
-as_float(A) ->
-    I = (A bsr ?FBITS) band (?IBASE-1),
-    F = A band (?FBASE-1),
-    I + F/?FBASE.
-    
-add(A,B) -> A+B.
-subtract(A,B) -> A-B.
-divide(A,B) -> ((A bsl ?FBITS) div B).
-multiply(A,B) -> (A*B) bsr ?FBITS.
-%% multiply sign of X with A
-msign(X,A) when X < 0 -> -A;
-msign(X,A) when X > 0 ->  A;
-msign(_,_A) -> 0.
-is_less(A,B) -> A < B.
--endif.
     
 view0(W,H,Opts) ->
     #view { x=0, y=0, w=W, h=H, 
-	    x0 = new(-2), x1 = new(1), 
-	    y0 = new(-1), y1 = new(1),
+	    x0 = -2.0, x1 = 1.0, 
+	    y0 = -1.0, y1 = 1.0,
 	    iter = proplists:get_value(maxiter,Opts,30)
 	    }.
 
@@ -170,6 +99,7 @@ init_cl(S) ->
 	Val ->
 	    Clu = case Val of
 		      true -> clu:setup();
+		      all -> clu:setup(all);
 		      gpu -> clu:setup(gpu);
 		      cpu -> clu:setup(cpu);
 		      accel -> clu:setup(accel)
@@ -179,17 +109,21 @@ init_cl(S) ->
 		_ -> ok
 	    end,
 	    Filename = filename:join([code:priv_dir(epx_demo),"z2_float.cl"]),
-	    io:format("build: ~s\n", [Filename]),
-	    {ok, Program} = clu:build_source_file(Clu, Filename, 
-						  "-DCONFIG_USE_DOUBLE=1"),
-	    io:format("program built\n"),
+	    ?debug("build: ~s\n", [Filename]),
+	    UseDouble = clu:devices_has_extension(Clu, "cl_khr_fp64"),
+	    Options = if UseDouble -> "-DCONFIG_USE_DOUBLE=1";
+			 true -> ""
+		      end,
+	    {ok, Program} = clu:build_source_file(Clu, Filename, Options),
+	     ?debug("program built\n",[]),
 	    {ok, Kernel} = cl:create_kernel(Program, "z2"),
-	    io:format("kernel created: ~p\n", [Kernel]),
+	    ?debug("kernel created: ~p\n", [Kernel]),
 	    %% Create the command queue for the first device
 	    Qs = [begin {ok,Q}=cl:create_queue(clu:context(Clu),D,[]),Q end ||
 		     D <- clu:device_list(Clu)],
-	    io:format("queue created\n"),
-	    S#s { cl_clu = Clu,
+	    ?debug("queues created\n",[]),
+	    S#s { use_double = UseDouble,
+		  cl_clu = Clu,
 		  cl_program = Program,
 		  cl_kernel = Kernel,
 		  cl_queues = Qs }
@@ -216,19 +150,19 @@ close(S) ->
 loop(S) ->
     receive
 	{epx_event,_Win, destroy} ->
-	    io:format("DESTROY\n"),
+	    ?debug("DESTROY\n",[]),
 	    close(S);
 	{epx_event,_Win, close} ->
-	    io:format("CLOSE\n"),
+	    ?debug("CLOSE\n",[]),
 	    close(S);
-	{epx_event,_Win,{button_press, [left], Where={X0,Y0,_Z0}}} ->
-	    io:format("START SELECTION: where=~w\n", [Where]),
+	{epx_event,_Win,{button_press, [left], _Where={X0,Y0,_Z0}}} ->
+	    ?debug("START SELECTION: where=~w\n", [_Where]),
 	    epx_gc:set_fill_color({50,255,255,255}),
 	    R = S#s.w / S#s.h,
 	    epx:pixmap_copy_to(S#s.pix,S#s.spix), %% make a copy of the image
 	    case select(S, {X0,Y0}, {X0,Y0,1,1},false,R) of
 		{select, _Selection={{X0,Y0},{X1,Y1}}} ->
-		    %% io:format("STOP SELECTION: area=~w\n", [Selection]),
+		    ?debug("STOP SELECTION: area=~w\n", [Selection]),
 		    epx_gc:set_fill_style(none),
 		    P = new_view(S#s.view, rectangle(X0,Y0,X1,Y1),R),
 		    draw(S#s.win, S#s.pix, P, S),
@@ -247,7 +181,7 @@ loop(S) ->
 	    P0 = S#s.view,
 	    P1 = P0#view { w=W, h=H },
 	    S1 = S#s { w=W, h=H, view=P1 },
-	    %% io:format("RESIZE: ~w ~w\n", [W, H]),
+	    ?debug("RESIZE: ~w ~w\n", [W, H]),
 	    %% redraw later... - fixme
 	    loop(S1);
 
@@ -300,7 +234,7 @@ loop(S) ->
 			    loop(S1)
 		    end;
 		_Key ->
-		    io:format("Got key: ~p\n", [_Key]),
+		    ?debug("Got key: ~p\n", [_Key]),
 		    loop(S)
 	    end;
 
@@ -312,10 +246,9 @@ loop(S) ->
 	    loop(S)
     end.
 
-
-sign(X) when X < 0 -> -1;
-sign(X) when X > 0 -> 1;
-sign(_) -> 0.
+msign(X,A) when X < 0 -> -A;
+msign(X,A) when X > 0 ->  A;
+msign(_,_A) -> 0.
 
 move(S, Mx, My) ->
     Dx = abs(Mx),
@@ -323,35 +256,34 @@ move(S, Mx, My) ->
     Rx = Dx / S#s.w,
     Ry = Dy / S#s.h,
     P = S#s.view,
-    Lx = multiply(Rx, subtract(P#view.x1, P#view.x0)),
-    Ly = multiply(Ry, subtract(P#view.y1, P#view.y0)),
+    Lx = Rx*(P#view.x1 - P#view.x0),
+    Ly = Ry*(P#view.y1 - P#view.y0),
     %% scroll and make revealed pixel area black
     epx:pixmap_scroll(S#s.pix, S#s.pix, Mx, My, 0, S#s.bg),
     update_win(S),
     %% setup redraw area
     {X,W,X0,X1} =
 	if %% left arrow - scroll right (move left)
-	    Mx > 0 -> {P#view.x, Dx, subtract(P#view.x0,Lx), P#view.x0 };
+	    Mx > 0 -> {P#view.x, Dx, P#view.x0-Lx, P#view.x0 };
 	    %% right arrow - scroll left (move right)
-	    Mx < 0 -> {P#view.w-Dx, Dx, P#view.x1, add(P#view.x1,Lx)};
+	    Mx < 0 -> {P#view.w-Dx, Dx, P#view.x1, P#view.x1+Lx};
 	    %%
 	    true   -> {P#view.x,P#view.w, P#view.x0, P#view.x1 }
 	end,
     {Y,H,Y0,Y1} =
 	if  
 	    %% down arrow - scroll up (move down)
-	    My > 0 -> {P#view.h-Dy, Dy, P#view.y1, add(P#view.y1,Ly) };
+	    My > 0 -> {P#view.h-Dy, Dy, P#view.y1, P#view.y1+Ly };
 	    %% up arrow - scroll down (move up)
-	    My < 0 -> {P#view.y, Dy, subtract(P#view.y0,Ly), P#view.y0 };
+	    My < 0 -> {P#view.y, Dy, P#view.y0-Ly, P#view.y0 };
 	    true   -> {P#view.y, P#view.h, P#view.y0, P#view.y1}
 	end,
     T =P#view { x=X, y=Y, w=W, h=H, x0=X0, x1=X1, y0=Y0, y1=Y1 },
-    %% io:format("P = ~p\n", [P]),
     draw(S#s.win, S#s.pix, T, S),  %% update area
-    P1 = P#view { x0=subtract(P#view.x0, msign(Mx,Lx)), 
-		  x1=subtract(P#view.x1, msign(Mx,Lx)),
-		  y0=add(P#view.y0, msign(My,Ly)),
-		  y1=add(P#view.y1, msign(My,Ly)) },
+    P1 = P#view { x0=P#view.x0 - msign(Mx,Lx), 
+		  x1=P#view.x1 - msign(Mx,Lx),
+		  y0=P#view.y0 + msign(My,Ly),
+		  y1=P#view.y1 + msign(My,Ly) },
     S#s { view=P1 }.
     
     
@@ -360,17 +292,17 @@ move(S, Mx, My) ->
 new_view(P, {X,Y,_W1,H1}, R) ->
     H = max(2, H1),
     W = trunc(H*R),
-    Xf = new(X / P#view.w),
-    Yf = new(Y / P#view.h),
+    Xf = X / P#view.w,
+    Yf = Y / P#view.h,
 
-    Sx = new(W / P#view.w),
-    Sy = new(H / P#view.h),
+    Sx = W / P#view.w,
+    Sy = H / P#view.h,
 
-    X0 = subtract(P#view.x0, multiply(Xf,subtract(P#view.x0,P#view.x1))),
-    Y0 = subtract(P#view.y0, multiply(Yf,subtract(P#view.y0,P#view.y1))),
+    X0 = P#view.x0 - Xf*(P#view.x0-P#view.x1),
+    Y0 = P#view.y0 - Yf*(P#view.y0-P#view.y1),
 
-    X1 = add(X0, multiply(Sx,subtract(P#view.x1,P#view.x0))),
-    Y1 = add(Y0, multiply(Sy,subtract(P#view.y1,P#view.y0))),
+    X1 = X0 + Sx*(P#view.x1-P#view.x0),
+    Y1 = Y0 + Sy*(P#view.y1-P#view.y0),
     P#view { x0=X0, y0=Y0, x1=X1, y1=Y1 }.
     
 
@@ -411,13 +343,7 @@ rectangle(X0,Y0,X1,Y1) ->
     { min(X0,X1), min(Y0,Y1), abs(X0-X1)+1,  abs(Y0-Y1)+1 }.
 
 draw(Win,Pix,View,S) ->
-    io:format("draw: view = ~p\n", 
-	      [{view,
-		View#view.x,View#view.y,
-		View#view.w,View#view.h,
-		as_float(View#view.x0),	as_float(View#view.y0),
-		as_float(View#view.x1),	as_float(View#view.y1),
-		View#view.iter}]),
+    %% io:format("draw: view = ~p\n", [{view,View#view.x,View#view.y,View#view.w,View#view.h,float(View#view.x0),float(View#view.y0),float(View#view.x1),float(View#view.y1),View#view.iter}]),
     case proplists:get_bool(parallel,S#s.opts) of
 	true ->
 	    N = proplists:get_value(patch,S#s.opts,64),
@@ -484,8 +410,8 @@ split_view(P) ->
     W2 = P#view.w - W1,
     H1 = P#view.h div 2,
     H2 = P#view.h - H1,
-    Xm = divide(add(P#view.x1,P#view.x0), new(2)),
-    Ym = divide(add(P#view.y1,P#view.y0), new(2)),
+    Xm = (P#view.x1+P#view.x0) / 2.0,
+    Ym = (P#view.y1+P#view.y0) / 2.0,
     [ 
       #view { x = P#view.x, y = P#view.y, w=W1, h=H1,
 	       x0 = P#view.x0, x1 = Xm,
@@ -513,10 +439,8 @@ draw(Pix,P,S) when is_record(P,view) ->
     if P#view.w == 0; P#view.h == 0 ->
 	    ok;
        true ->
-	    Xs = divide(subtract(P#view.x1,P#view.x0),new(P#view.w)),
-	    Ys = divide(subtract(P#view.y1,P#view.y0),new(P#view.h)),
-	    %% io:format("xs=~p\n", [as_float(Xs)]),
-	    %% io:format("ys=~p\n", [as_float(Ys)]),
+	    Xs =(P#view.x1-P#view.x0)/P#view.w,
+	    Ys =(P#view.y1-P#view.y0)/P#view.h,
 	    if S#s.cl_clu == undefined ->
 		    draw_y(Pix,P#view.h,P#view.y,P#view.y0,Xs,Ys,P,S);
 	       true ->
@@ -531,8 +455,8 @@ draw(_Pix,[],_S) ->
 
 draw_cl(Pix,Xs,Ys,P,S) ->
     %% Create the output memory
-    X0 = as_float(P#view.x0),  %% force float
-    Y0 = as_float(P#view.y0),  %% force float
+    X0 = float(P#view.x0),  %% force float
+    Y0 = float(P#view.y0),  %% force float
     W = P#view.w,
     H = P#view.h,
     %% N = W * H,
@@ -541,7 +465,7 @@ draw_cl(Pix,Xs,Ys,P,S) ->
     Ds  = clu:device_list(S#s.cl_clu),
     NumDevices = length(Ds),
     Hi  = (H+NumDevices-1) div NumDevices,
-    VHi = (as_float(P#view.y1) - as_float(P#view.y0))/NumDevices,
+    VHi = (float(P#view.y1) - float(P#view.y0))/NumDevices,
     %% number of buffer bytes per device
     NumBytes = Hi*W*4,
     Bufs =
@@ -551,47 +475,41 @@ draw_cl(Pix,Xs,Ys,P,S) ->
     
     Es = 
 	[begin
-	     io:format("device = ~p\n", [D]),
+	     ?debug("device = ~p\n", [D]),
 	     Yi = Y0+I*VHi,
-	     io:format("X0,Y0 = ~w, Hi=~w\n", [{X0,Yi},Hi]),
+	     ?debug("X0,Y0 = ~w, Hi=~w\n", [{X0,Yi},Hi]),
+	     Real_t = if S#s.use_double -> double;
+			 true -> float
+		      end,
 	     clu:apply_kernel_args(S#s.cl_kernel,
-				   [{float,X0}, {float,Yi},
-				    {float,as_float(Xs)},{float,as_float(Ys)},
+				   [{Real_t,X0}, {Real_t,Yi},
+				    {Real_t,float(Xs)},{Real_t,float(Ys)},
 				    {uint,W},{uint,Hi},
 				    {uint,P#view.iter},Buf]),
-	     io:format("global = ~w,~w\n", [W,H]),
-	     %% Max work group size
-	     {ok,MaxWorkGroupSize} = cl:get_device_info(D,max_work_group_size),
-	     io:format("max_work_group_size = ~w\n", [MaxWorkGroupSize]),
-	     {ok,[LW,LH|_]} = cl:get_device_info(D, max_work_item_sizes),
-	     io:format("1.local = ~w,~w\n", [LW,LH]),
-	     LW1 = imath:gcd(LW, W),
-	     LH1 = imath:gcd(LH, H),
-	     io:format("2.local = ~w,~w\n", [LW1,LH1]),
-	     {LW2,LH2} = scale_down_work_item_sizes(LW1,LH1,MaxWorkGroupSize),
-	     io:format("3.local = ~w,~w\n", [LW2,LH2]),
-	     %% Local1 = 1,
 	     Global = [W, H],
+	     ?debug("global = ~w\n", [Global]),
+	     Local = calc_local(D, Global),
+	     ?debug("local = ~w\n", [Local]),
 	     {ok,Event1} = cl:enqueue_nd_range_kernel(Q,
 						      S#s.cl_kernel,
-						      Global, [LW2,LH2], []),
-	     io:format("kernel queued event1 = ~p\n", [Event1]),
+						      Global, Local, []),
+	     ?debug("kernel queued event1 = ~p\n", [Event1]),
 	     {ok,Event2} = cl:enqueue_read_buffer(Q,Buf,0,NumBytes,[Event1]),
-	     io:format("read buffer queued event2 = ~p\n", [Event2]),
+	     ?debug("read buffer queued event2 = ~p\n", [Event2]),
 	     {Event1,Event2}
 	 end || {I,D,Q,Buf} <- zip(lists:seq(0, NumDevices-1), Ds, Qs, Bufs)],
     lists:foreach(fun(Q) -> cl:flush(Q) end, Qs),
-    io:format("flushed\n"),
+    ?debug("flushed\n",[]),
     map(fun({E1,_}) ->  
 		cl:wait(E1,1000)
 	end, Es),
-    io:format("calculations are done\n"),
+    ?debug("calculations are done\n",[]),
     PixelsLists =
 	map(fun({_,E2}) ->
 		    {ok,OutData} = cl:wait(E2,3000),
 		    [ get_color(D,S#s.colors) || <<D:32/native>> <= OutData ]
 	    end, Es),
-    io:format("got pixles\n"),
+    ?debug("got pixles\n",[]),
     foreach(
       fun({I,Pixels}) ->
 	      epx:pixmap_put_pixels(Pix,
@@ -606,6 +524,21 @@ zip([A|As],[B|Bs],[C|Cs],[D|Ds]) ->
 zip([],[],[],[]) ->
     [].
 
+calc_local(_D,_Global) ->
+    [];
+calc_local(D,[W,H]) -> %% disabled right now
+    %% Max work group size
+    {ok,MaxWorkGroupSize}=cl:get_device_info(D,max_work_group_size),
+    %% ?debug("max_work_group_size = ~w\n", [MaxWorkGroupSize]),
+    {ok,[LW,LH|_]} = cl:get_device_info(D, max_work_item_sizes),
+    ?debug("1.local = ~w,~w\n", [LW,LH]),
+    LW1 = imath:gcd(LW, W),
+    LH1 = imath:gcd(LH, H),
+    ?debug("2.local = ~w,~w\n", [LW1,LH1]),
+    {LW2,LH2} = scale_down_work_item_sizes(LW1,LH1,MaxWorkGroupSize),
+    ?debug("3.local = ~w,~w\n", [LW2,LH2]),
+    %% Local1 = 1,
+    [LW2,LH2].
 
 scale_down_work_item_sizes(1,  H,  Max) -> {1,min(H,Max)};
 scale_down_work_item_sizes(W,  1,  Max) -> {min(W,Max),1};
@@ -623,7 +556,7 @@ draw_y(Pix,H,Yi,Y,Xs,Ys,P,S) ->
     Pixels = line_x(P#view.w,P#view.x0,Y,Xs,P,S),
     %% draw_x(Pix,P#view.w,P#view.x,Yi,P#view.x0,Y,Xs,P,S),
     epx:pixmap_put_pixels(Pix,P#view.x,Yi,P#view.w,1,argb,Pixels),
-    draw_y(Pix,H-1,Yi+1,add(Y,Ys),Xs,Ys,P,S).
+    draw_y(Pix,H-1,Yi+1,Y+Ys,Xs,Ys,P,S).
 
 %% alternative that plot every x
 draw_x(_Pix,0,_Xi,_Yi,_X,_Y,_Xs,_P,_S) ->
@@ -632,13 +565,13 @@ draw_x(Pix,W,Xi,Yi,X,Y,Xs,P,S) ->
     D = z2(P#view.iter,X,Y),
     Pixel = get_color(D, S#s.colors),
     epx:pixmap_put_pixel(Pix, Xi, Yi, Pixel),
-    draw_x(Pix,W-1,Xi+1,Yi,add(X,Xs),Y,Xs,P,S).
+    draw_x(Pix,W-1,Xi+1,Yi,X+Xs,Y,Xs,P,S).
 
 line_x(0,_X,_Y,_Xs,_P,_S) ->
     [];
 line_x(W,X,Y,Xs,P,S) ->
     D = z2(P#view.iter,X,Y),
-    [get_color(D, S#s.colors) | line_x(W-1,add(X,Xs),Y,Xs,P,S)].
+    [get_color(D, S#s.colors) | line_x(W-1,X+Xs,Y,Xs,P,S)].
 
 get_color(0, Palette) -> element(1,Palette);
 get_color(I, Palette) -> 
@@ -906,18 +839,17 @@ colors_xaos() ->
 %% Z^2 + Z(0) = (A+Bi)^2 + (X+Yi) = ((A^2-B^2)+X) + (2AB+Y)i
 %%
 z2(Max,Cx,Cy) ->
-    z2(Max,0,Cx,Cy,new(0),new(0),new(0),new(0),new(2),new(4)).
+    z2(Max,0,Cx,Cy,0.0,0.0,0.0,0.0).
 
-z2(Max,K,Cx,Cy,A,B,A2,B2,Two,Four) ->
-    if K >= Max -> 
+z2(Max,K,Cx,Cy,A,B,A2,B2) ->
+    if K >= Max ->
 	    0;
        true ->
-	    case is_less(add(A2,B2), Four) of
-		true ->
-		    R   = add(subtract(A2,B2), Cx),
-		    I   = add(multiply(Two, multiply(A,B)), Cy),
-		    z2(Max,K+1,Cx,Cy,R,I,multiply(R,R),multiply(I,I),Two,Four);
-		false ->
+	    if (A2+B2) < 4.0 ->
+		    R   = (A2-B2) + Cx,
+		    I   = 2.0*A*B + Cy,
+		    z2(Max,K+1,Cx,Cy,R,I,R*R,I*I);
+	       true ->
 		    K
 	    end
     end.

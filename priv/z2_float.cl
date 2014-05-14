@@ -20,8 +20,8 @@ typedef float real_t;
 typedef float real_t;
 #endif
 
-__kernel void z2(const float x, const float y, 
-		 const float xs, const float ys, 
+__kernel void z2(const real_t x, const real_t y,
+		 const real_t xs, const real_t ys,
 		 const uint w, const uint h,
 		 const uint n,
 		 __global unsigned int* out)
