@@ -20,7 +20,7 @@
 %%% @end
 %%% Created : 27 Oct 2010 by Tony Rogvall <tony@rogvall.se>
 
--module(epx_anim_test).
+-module(epx_scale_test).
 
 -export([show/1]).
 
@@ -28,44 +28,53 @@
 	{
 	  backend,
 	  window,
-	  foreground_pixels,
 	  background_pixels,
+	  pixmap,
 	  width,
 	  height,
 	  background = {255,0,0}
 	}).
+
+-include_lib("epx/include/epx_image.hrl").
 %%
-%% Show dds file
+%% Show image file scale into 240x240 - size
 %%
 show([File]) when is_atom(File) ->
     show([atom_to_list(File)]);
 show([File]) when is_list(File) ->
     epx:start(),
     Backend = epx_backend:default(),
-    Anim = epx:animation_open(File),
-    Width0 = epx:animation_info(Anim, width),
-    Height0 = epx:animation_info(Anim, height),
-    Format = epx:animation_info(Anim, pixel_format),
-    io:format("width=~w, height=~w, pixel format = ~w\n",
-	      [Width0,Height0,Format]),
-    Width = Width0 + 20,
-    Height = Height0 + 20,
-    Window = epx:window_create(40, 40, Width, Height),
-    ForegroundPx = epx:pixmap_create(Width, Height, Format),
-    BackgroundPx = epx:pixmap_create(Width, Height, Format),
-    epx:window_attach(Window, Backend),
-    epx:pixmap_attach(BackgroundPx, Backend),
-    S0 = #state { backend = Backend,
-		  window = Window,
-		  foreground_pixels = ForegroundPx,
-		  background_pixels = BackgroundPx,
-		  width = Width,
-		  height = Height },
-    Count = epx:animation_info(Anim, count),
-    io:format("Count=~w\n", [Count]),
-    loop(S0, Anim, 0, Count, 0).
+    case epx_image:load(File) of
+	{error,Reason} ->
+	    io:format("unable to load file ~s : ~p\n", [File, Reason]),
+	    erlang:halt(1);
+	{ok,#epx_image {pixmaps=[Pixmap]}} ->
+	    Width = 320,
+	    Height = 240,
+	    Window = epx:window_create(40, 40, Width, Height),
+	    BackgroundPx = epx:pixmap_create(Width, Height, argb),
+	    epx:window_attach(Window, Backend),
+	    epx:pixmap_attach(BackgroundPx, Backend),
+	    S0 = #state { backend = Backend,
+			  window = Window,
+			  background_pixels = BackgroundPx,
+			  pixmap = Pixmap,
+			  width  = Width,
+			  height = Height },
+	    draw(S0),
+	    loop(S0)
+    end.
 
-loop(S, Anim, Index, Count, Timeout) ->
+
+draw(S) ->
+    epx:pixmap_fill(S#state.background_pixels, S#state.background),
+    epx:pixmap_scale_area(S#state.pixmap, S#state.background_pixels,
+			  0, 0, 240, 240, [blend]),
+    epx:pixmap_draw(S#state.background_pixels, S#state.window,
+		    0, 0, 0, 0, 
+		    S#state.width, S#state.height).
+    
+loop(S) ->
     receive
 	{epx_event, Win, close} when Win =:= S#state.window ->
 	    io:format("Got window1 close\n", []),
@@ -74,19 +83,9 @@ loop(S, Anim, Index, Count, Timeout) ->
 	    ok;
 	{epx_event, Win, Event} when Win =:= S#state.window ->
 	    io:format("Got window event ~p\n", [Event]),
-	    loop(S, Anim, Index, Count, Timeout);
+	    loop(S);
 	{epx_event, _Win, Event} ->
 	    io:format("Got other window ~w event ~p\n", [_Win,Event]),
-	    loop(S, Anim, Index, Count, Timeout)
-    after Timeout ->
-	    epx:pixmap_fill(S#state.background_pixels, S#state.background),
-	    epx:animation_draw(Anim,Index,
-			       S#state.background_pixels,epx_gc:current(),
-			       10, 10),
-	    epx:pixmap_draw(S#state.background_pixels, S#state.window,
-			    0, 0, 0, 0, 
-			    S#state.width, S#state.height),
-	    Index1 = (Index + 1) rem Count,
-	    loop(S, Anim, Index1, Count, erlang:max(10,1000 div Count))
+	    loop(S)
     end.
 

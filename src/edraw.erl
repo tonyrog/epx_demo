@@ -1220,13 +1220,13 @@ start(Func) ->
     start(Func, 640, 480).
 
 start(Func, W, H) ->
-    epic:start([]),
-    {ok,Win} = ewindow:create(50,50,W,H,[button_press,key_press]),
-    ewindow:attach(Win),
-    [{_Delay,Image}|_] = eimage:file(filename:join(code:priv_dir(epic),
-						   "erlang.png")),
-    {ok,Pix} = epixmap:create(W,H),
-    epixmap:attach(Pix),
+    epx:start(),
+    Win = epx:window_create(50,50,W,H,[button_press,key_press]),
+    epx:window_attach(Win),
+    [{_Delay,Image}|_] = epx_image:file(filename:join(code:priv_dir(epx),
+						      "erlang.png")),
+    Pix = epx_pixmap:create(W,H,argb),
+    epx:pixmap_attach(Pix),
 
     S0 = #s { func=Func, tmo=infinity, win = Win, pix = Pix, 
 	      image = Image, width = W, height = H },
@@ -1237,13 +1237,13 @@ start(Func, W, H) ->
 loop(S) ->
     Win = S#s.win,
     receive
-	{eevent,Win, destroy} ->
+	{epx_event,Win, destroy} ->
 	    stop(S);
-	{eevent,Win, close} ->
+	{epx_event,Win, close} ->
 	    stop(S);
-	{eevent,_Win,{key_press, $q, _Mod, _Code}} ->
+	{epx_event,_Win,{key_press, $q, _Mod, _Code}} ->
 	    stop(S);
-	{eevent,_Win,{key_press, Key, _Mod, _Code}} ->
+	{epx_event,_Win,{key_press, Key, _Mod, _Code}} ->
 	    case Key of
 		$1 -> loop(S#s { tmo=1000 });
 		$2 -> loop(S#s { tmo=500 });
@@ -1256,7 +1256,7 @@ loop(S) ->
 		$9 -> loop(S#s { tmo=1 });
 		_ -> loop(S)
 	    end;
-	{eevent,Win,{button_press, [left], _Where}} ->
+	{epx_event,Win,{button_press, [left], _Where}} ->
 	    if is_integer(S#s.tmo) ->
 		    loop(S#s { tmo = infinity });
 	       true ->
@@ -1272,16 +1272,16 @@ loop(S) ->
     end.
 
 stop(S) ->
-    epixmap:destroy(S#s.pix),
-    ewindow:destroy(S#s.win),
+    epx:pixmap_destroy(S#s.pix),
+    epx:window_destroy(S#s.win),
     ok.
 
 update(S) ->
-    epixmap:draw(S#s.pix,S#s.win,0,0,0,0,S#s.width,S#s.height),
+    epx:pixmap_draw(S#s.pix,S#s.win,0,0,0,0,S#s.width,S#s.height),
     S.
 
 draw(S) ->
-    epixmap:fill(S#s.pix, S#s.bg), %% clear 
+    epx:pixmap_fill(S#s.pix, S#s.bg), %% clear 
     S1 = ?MODULE:(S#s.func) (next, S),
     update(S1).
 

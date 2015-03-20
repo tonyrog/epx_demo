@@ -18,17 +18,53 @@
 -define(DEFAULT_FORMAT, argb).
 -define(DEFAULT_INTERVAL, 10).
 
--define(NUM_SPRITES, 10).
+-define(G, 6.673E-11).
 %% API
 -export([start_link/0, start_link/1]).
+
+-export([set_backdrop_image/2]).
+-export([set_backdrop_offset/3]).
+-export([set_backdrop_velocity/3]).
+-export([create/4]).
+-export([set_position/4]).
+-export([set_velocity/4]).
+-export([set_acceleration/4]).
+-export([set_mass/3]).
+-export([set_rotation_velocity/3]).
+-export([set_rotation/3]).
+-export([update_pixels/3]).
+-export([fill/3]).
+-export([set_image_file/3]).
+-export([set_image/3]).
+-export([sprite_table/1]).
+
+-compile(export_all).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
--compile(export_all).
-
 -type unsigned() :: non_neg_integer().
+-type sprite_id() :: reference().
+-type sprite_option() ::
+	{x, number()} |
+	{y, number()} |
+	{vx, number()} |
+	{vy, number()} |
+	{ax, number()} |
+	{ay, number()} |
+	{m, number()} |
+	{va, number()} |
+	{anglef, function() | undefined} |
+	{angle, number()} |
+	{wrap, boolean()}.
+
+-type option() ::
+	{width, unsigned()} |
+	{height, unsigned()} |
+	{color, epx:epx_color()} |
+	{format, epx:epx_pixel_format()} |
+	{interval, unsigned()}.
 
 -record(sprite,
 	{
@@ -41,9 +77,12 @@
 	  height :: float(),
 	  anglef :: function(),        %% angle function
 	  angle  :: float(),           %% rotation angle (degree 0-360)
-	  sx     :: float(),           %% speed x pixels/s
-	  sy     :: float(),           %% speed y pixels/s
-	  sa     :: float(),           %% speed degree/s
+	  vx     :: float(),           %% velocity x pixels/s
+	  vy     :: float(),           %% velocity y pixels/s
+	  ax     :: float(),           %% accelertion x (pixels/s)/s
+	  ay     :: float(),           %% accelertion y (pixels/s)/s
+	  m      :: float(),           %% sprite mass
+	  va     :: float(),           %% rotation angular speed degree/s
 	  wrap   :: boolean(),         %% wrap or bounce
 	  rd     :: epx:epx_pixmap(),  %% read pixmap
 	  wr     :: epx:epx_pixmap()   %% write pixmap
@@ -73,45 +112,22 @@
 %%% API
 %%%===================================================================
 
-main() ->
-    {ok,Game} = start_link(),
-    LibDir = code:lib_dir(epx_demo),
-    BackdropFile = filename:join([LibDir,"images", 
-				  "the-blue-ocean-hd-wallpapers.png"]),
-    {ok,Pixels} = load_pixmap(BackdropFile),
+%%--------------------------------------------------------------------
+%% @doc
+%% Starts the server
+%%
+%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
+%% @end
+%%--------------------------------------------------------------------
 
-    set_backdrop_offset(Game, 0.0, 200.0),
-    set_backdrop_image(Game, Pixels),
-    set_backdrop_speed(Game,  30, 0.0),
+-spec start_link() -> {ok,pid()} | {error,Reason::atom()}.
+start_link() ->
+    start_link([]).
 
-    smc:start(),
-    [begin
-	 X = random(0, 640-32-1),
-	 Y = random(0, 480-32-1),
-	 {ok, S} = create_sprite(Game, 64, 64, 
-				 [{x,X},
-				  {y,Y},
-				  {wrap,(I band 1) =:= 1},
-				  {anglef,
-				   fun(_S) ->
-					   {Xv,_,_} = smc:read_motion(),
-					   -Xv*45
-				   end}
-				 ]),
-	 if I =:= 1 ->
-		 set_image_file(Game, S, 
-				filename:join([os:getenv("HOME"),
-					       "Pictures","Tony","Tony.png"]));
-	    true ->
-		 {_,R,G,B} = random_rgb(),
-		 fill_sprite(Game,S,{127,R,G,B})
-	 end,
-	 Sx = random(-50, 50),
-	 Sy = random(-50, 50),
-	 speed_sprite(Game, S, Sx, Sy), 
-	 Sa = 0, %% random(0, 15),
-	 rotate_speed_sprite(Game, S, Sa)
-     end || I <- lists:seq(1, ?NUM_SPRITES)].
+-spec start_link(Options::[option()]) ->
+			{ok,pid()} | {error,Reason::atom()}.
+start_link(Options) ->
+    gen_server:start_link(?MODULE, Options, []).
 
 set_backdrop_image(Game, Pixels) ->
     gen_server:call(Game, {set_backdrop_image, Pixels}).
@@ -119,52 +135,95 @@ set_backdrop_image(Game, Pixels) ->
 set_backdrop_offset(Game, X, Y) ->
     gen_server:call(Game, {set_backdrop_offset,X,Y}).
 
-set_backdrop_speed(Game, Sx, Sy) ->
-    gen_server:call(Game, {set_backdrop_speed,Sx,Sy}).
+set_backdrop_velocity(Game, Sx, Sy) ->
+    gen_server:call(Game, {set_backdrop_velocity,Sx,Sy}).
 
-create_sprite(Game,W,H,Opts) when is_pid(Game) ->
-    gen_server:call(Game, {create_sprite,W,H,Opts}).
+-spec create(Game::pid(),Width::unsigned(),Hieght::unsigned(),
+	     Options::[sprite_option()]) -> {ok,Sprite::sprite_id()}.
 
-%% move sprite to position x,y
-moveto_sprite(Game,Ref,X,Y) when is_pid(Game),
-				 is_reference(Ref),
-				 is_number(X),
-				 is_number(Y) ->
+create(Game,W,H,Opts) when is_pid(Game) ->
+    gen_server:call(Game, {create,W,H,Opts}).
+
+%% @doc			   
+%%   Move sprite to position x,y
+%% @end
+-spec set_position(Game::pid(),Ref::sprite_id(),
+		   X::number(),Y::number()) -> ok.
+
+set_position(Game,Ref,X,Y) when is_pid(Game),
+				is_reference(Ref),
+				is_number(X),
+				is_number(Y) ->
     Tab = sprite_table(Game),
     ets:update_element(Tab, Ref, [{#sprite.x,X},{#sprite.y,Y}]),
     ok.
 
 %% set sprite x,y speed
-speed_sprite(Game,Ref,X,Y) when is_pid(Game),
-				is_reference(Ref),
-				is_number(X),
-				is_number(Y) ->
+-spec set_velocity(Game::pid(),Ref::sprite_id(),
+		   Vx::number(),Vy::number()) -> ok.
+
+set_velocity(Game,Ref,Vx,Vy) when is_pid(Game),
+				  is_reference(Ref),
+				  is_number(Vx),
+				  is_number(Vy) ->
     Tab = sprite_table(Game),
-    ets:update_element(Tab, Ref, [{#sprite.sx,X},{#sprite.sy,Y}]),
+    ets:update_element(Tab, Ref, [{#sprite.vx,Vx},{#sprite.vy,Vy}]),
     ok.
 
-%% set sprite rotation speed
-rotate_speed_sprite(Game,Ref,A) when is_pid(Game),
-				     is_reference(Ref),
-				     is_number(A) ->
+%% set sprite x,y acceleration
+-spec set_acceleration(Game::pid(),Ref::sprite_id(),
+		       Vx::number(),Vy::number()) -> ok.
+
+set_acceleration(Game,Ref,Ax,Ay) when 
+      is_pid(Game),
+      is_reference(Ref),
+      is_number(Ax),
+      is_number(Ay) ->
     Tab = sprite_table(Game),
-    ets:update_element(Tab, Ref, [{#sprite.sa,A}]),
+    ets:update_element(Tab, Ref, [{#sprite.ax,Ax},{#sprite.ay,Ay}]),
     ok.
 
-rotate_sprite(Game,Ref,Angle) when is_number(Angle) ->
+%% set sprite mass
+-spec set_mass(Game::pid(),Ref::sprite_id(),M::number()) -> ok.
+
+set_mass(Game,Ref,M) when is_pid(Game),
+			  is_reference(Ref),
+			  is_number(M) ->
+    Tab = sprite_table(Game),
+    ets:update_element(Tab, Ref, [{#sprite.m,M}]),
+    ok.
+
+
+%% set sprite rotation velocity
+-spec set_rotation_velocity(Game::pid(),Ref::sprite_id(),
+			   Va::number()) -> ok.
+set_rotation_velocity(Game,Ref,Va) when is_pid(Game),
+					is_reference(Ref),
+					is_number(Va) ->
+    Tab = sprite_table(Game),
+    ets:update_element(Tab, Ref, [{#sprite.va,Va}]),
+    ok.
+
+set_rotation(Game,Ref,Angle) when is_number(Angle) ->
     Tab = sprite_table(Game),
     ets:update_element(Tab, Ref, [{#sprite.angle,Angle}]),
     ok.
 
-fill_sprite(Game, Ref, Color) ->
+update_pixels(Game, Ref, Fun) ->
     Tab = sprite_table(Game),
     [S] = ets:lookup(Tab, Ref),
     Wr = S#sprite.wr,
     Rd = S#sprite.rd,
-    epx:pixmap_fill(Wr, Color),
+    Fun(Wr),  %% user update the Wr pixmap
     %% swap in sprite
     ets:update_element(Tab, Ref, [{#sprite.rd,Wr},{#sprite.wr,Rd}]),
     epx:pixmap_copy_to(Wr, Rd).
+    
+fill(Game, Ref, Color) ->
+    update_pixels(Game, Ref,
+		  fun(Pixmap) ->
+			  epx:pixmap_fill(Pixmap, Color)
+		  end).
 
 set_image_file(Game, Ref, File) ->
     case epx_image:load(File) of
@@ -175,31 +234,13 @@ set_image_file(Game, Ref, File) ->
 	    Error
     end.
 
-set_image(Game, Ref, Pixmap) ->
-    Tab = sprite_table(Game),
-    [S] = ets:lookup(Tab, Ref),
-    Wr = S#sprite.wr,
-    Rd = S#sprite.rd,
-    epx:pixmap_scale(Pixmap, Wr, 
-		     epx:pixmap_info(Wr, width),
-		     epx:pixmap_info(Wr,height)),
-    %% swap in sprite
-    ets:update_element(Tab, Ref, [{#sprite.rd,Wr},{#sprite.wr,Rd}]),
-    epx:pixmap_copy_to(Wr, Rd).
-    
-
-%%--------------------------------------------------------------------
-%% @doc
-%% Starts the server
-%%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
-%% @end
-%%--------------------------------------------------------------------
-start_link() ->
-    start_link([]).
-
-start_link(Options) ->
-    gen_server:start_link(?MODULE, Options, []).
+set_image(Game, Ref, Image) ->
+    update_pixels(Game, Ref,
+		  fun(Pixmap) ->
+			  epx:pixmap_scale(Image, Pixmap,
+					   epx:pixmap_info(Pixmap, width),
+					   epx:pixmap_info(Pixmap,height))
+		  end).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -217,7 +258,6 @@ start_link(Options) ->
 %% @end
 %%--------------------------------------------------------------------
 init(Options) ->
-    application:start(epx),
     Width  = proplists:get_value(width, Options, ?DEFAULT_WIDTH),
     Height = proplists:get_value(height, Options, ?DEFAULT_HEIGHT),
     Color  = proplists:get_value(color, Options, ?DEFAULT_COLOR),
@@ -268,7 +308,7 @@ init(Options) ->
 handle_call(get_sprites, _From, State) ->
     {reply, {ok,State#state.sprites}, State};
 
-handle_call({create_sprite,W,H,Opts},_From,State) ->
+handle_call({create,W,H,Opts},_From,State) ->
     Format = epx:pixmap_info(State#state.pixels,pixel_format),
     Rd     = epx:pixmap_create(W,H,Format),
     Wr     = epx:pixmap_create(W,H,Format),
@@ -276,13 +316,16 @@ handle_call({create_sprite,W,H,Opts},_From,State) ->
     Sprite = #sprite { id = Ref, 
 		       x  = proplists:get_value(x, Opts, 0.0),
 		       y  = proplists:get_value(y, Opts, 0.0),
-		       xo = W / 2, 
+		       xo = W / 2,
 		       yo = H / 2,
 		       width  = W,
 		       height = H,
-		       sx = proplists:get_value(sx, Opts, 0.0),
-		       sy = proplists:get_value(sy, Opts, 0.0),
-		       sa = proplists:get_value(sa, Opts, 0.0),
+		       vx = proplists:get_value(vx, Opts, 0.0),
+		       vy = proplists:get_value(vy, Opts, 0.0),
+		       ax = proplists:get_value(ax, Opts, 0.0),
+		       ay = proplists:get_value(ay, Opts, 0.0),
+		       m  = proplists:get_value(m, Opts, 0.0),
+		       va = proplists:get_value(va, Opts, 0.0),
 		       anglef = proplists:get_value(anglef, Opts, undefined),
 		       angle = proplists:get_value(angle, Opts, 0.0),
 		       wrap = proplists:get_bool(wrap,Opts),
@@ -296,7 +339,7 @@ handle_call({set_backdrop_image,Pixels}, _From, State) ->
 
 handle_call({set_backdrop_offset,X,Y}, _From, State) ->
     {reply, ok, State#state { box = float(X), boy = float(Y) }};
-handle_call({set_backdrop_speed,Sx,Sy}, _From, State) ->
+handle_call({set_backdrop_velocity,Sx,Sy}, _From, State) ->
     {reply, ok, State#state { bsx = float(Sx), bsy = float(Sy) }};
 
 handle_call(_Request, _From, State) ->
@@ -326,7 +369,7 @@ handle_cast(_Msg, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_info(_Info={epx_event,Win,close}, State) when State#state.win =:= Win ->
-    io:format("Got: ~p\n", [_Info]),
+    io:format("Stopped: ~p\n", [_Info]),    
     {stop, normal, State};
 handle_info({timeout,_Ref,{refresh,Then}}, State) ->
     Now = time_us(),
@@ -335,7 +378,7 @@ handle_info({timeout,_Ref,{refresh,Then}}, State) ->
     update_window(State1),
     I = State1#state.interval,
     E = (T - I*1000) div 1000, %% >= 0,
-    I1 = min(10, max(0,I-E)),
+    I1 = max(10, max(0,I-E)),
     erlang:start_timer(I1, self(),{refresh,Now}),
     {noreply, State1};
 handle_info(_Info, State) ->
@@ -354,8 +397,9 @@ handle_info(_Info, State) ->
 %% @end
 %%--------------------------------------------------------------------
 terminate(_Reason, State) ->
-    epx:pixmap_detach(State#state.pixels),
+    io:format("terminate: ~p\n", [_Reason]),
     epx:window_detach(State#state.win),
+    epx:pixmap_detach(State#state.pixels),
     ok.
 
 %%--------------------------------------------------------------------
@@ -384,153 +428,190 @@ sprite_table(Game) ->
 	    Table
     end.
 
-%% may fail for some gif images
-load_pixmap(File) ->
-    case epx_image:load(File) of
-	{ok,Img} ->
-	    [Pixmap] = Img#epx_image.pixmaps,
-	    {ok,Pixmap};
-	Error ->
-	    Error
-    end.
-
 redraw_window(State,T) ->
+    epx:pixmap_fill(State#state.background, State#state.color),  %% clear
+    Ts  = T / 1000000,
+    Sprites0 = update_sprites(State, Ts),
+    State1 = update_backdrop(State, Ts),
+    Sprites1 = bounce_sprites(Sprites0, State1),
+    redraw_sprites(Sprites1, State1).
+
+
+redraw_sprites(Sprites, State) ->
+    Tab = State#state.sprites,
+    [
+     begin
+	 ets:update_element(Tab, Si#sprite.id,
+			    [{#sprite.x,Si#sprite.x},
+			     {#sprite.y,Si#sprite.y},
+			     {#sprite.vx,Si#sprite.vx},
+			     {#sprite.vy,Si#sprite.vy},
+			     {#sprite.angle, Si#sprite.angle}]),
+	 Angle = radians(Si#sprite.angle),
+	 if Angle == 0 ->
+		 epx:pixmap_copy_area(
+		   Si#sprite.rd,
+		   State#state.background,
+		   0, 0, 
+		   trunc(Si#sprite.x), trunc(Si#sprite.y),
+		   trunc(Si#sprite.width), trunc(Si#sprite.height),
+		   [blend]);
+	    true ->
+		 epx:pixmap_rotate_area(
+		   Si#sprite.rd,
+		   State#state.background,
+		   Angle,
+		   0, 0,
+		   trunc(Si#sprite.xo),
+		   trunc(Si#sprite.yo),
+		   trunc(Si#sprite.x + Si#sprite.xo),
+		   trunc(Si#sprite.y + Si#sprite.yo),
+		   trunc(Si#sprite.width), trunc(Si#sprite.height),
+		   [blend])
+	 end
+      end || Si <- Sprites],
+    State.
+
+bounce_sprites(Sprites, State) ->
     Width  = State#state.width,
     Height = State#state.height,
+
+    WX0 = 0, WX1 = Width-1,
+    WY0 = 0, WY1 = Height-1,
+
+    %% limit the sprites againt walls (fixme make walls dynamic)
+    [begin
+	 SX0 = Si#sprite.x, SX1 = Si#sprite.x + Si#sprite.width - 1,
+	 SY0 = Si#sprite.y, SY1 = Si#sprite.y + Si#sprite.height - 1,
+	 if Si#sprite.wrap ->
+		 {X,Vx} =
+		     if SX0 >= WX1 ->
+			     {WX0, Si#sprite.vx};
+			SX1 =< WX0 ->
+			     {WX1, Si#sprite.vx};
+			true ->
+			     {Si#sprite.x, Si#sprite.vx}
+		     end,
+		 {Y,Vy} = 
+		     if SY0 >= WY1 ->
+			     {WY0, Si#sprite.vy};
+			SY1 =< WY0 ->
+			     {WY1, Si#sprite.vy};
+			true ->
+			     {Si#sprite.y, Si#sprite.vy}
+		     end,
+		 Si#sprite{x=X,y=Y,vx=Vx,vy=Vy};
+	    true ->
+		 {X,Vx} =
+		     if SX1 >= WX1 ->
+			     {SX0-((SX1-WX1)+1),-Si#sprite.vx};
+			SX0 =< WX0 ->
+			     {SX0+((WX0-SX0)+1),-Si#sprite.vx};
+			true ->
+			     {Si#sprite.x, Si#sprite.vx}
+		     end,
+		 {Y,Vy} = 
+		     if SY1 >= WY1 ->
+			     {SY0-((SY1-WY1)+1),-Si#sprite.vy};
+			SY0 =< WY0 ->
+			     {SY0+((WY0-SY0)+1),-Si#sprite.vy};
+			true ->
+			     {Si#sprite.y, Si#sprite.vy}
+		     end,
+		 Si#sprite{x=X,y=Y,vx=Vx,vy=Vy}
+	 end
+     end || Si <- Sprites ].
+
+
+%% update acceleration, velocity, position and rotation
+update_sprites(State, Ts) ->
     Tab = State#state.sprites,
-    Ts  = T / 1000000,
-    epx:pixmap_fill(State#state.background, State#state.color),
-    State1 =
-	case State#state.backdrop of
-	    undefined -> 
-		State;
-	    Backdrop ->
-		Bx = if State#state.bsx == 0 ->
-			     State#state.bx;
-			true ->
-			     State#state.bx + State#state.bsx * Ts
-		     end,
-		By = if State#state.bsy == 0 ->
-			     State#state.by;
-			true ->
-			     State#state.by + State#state.bsy * Ts
-		     end,
-		Bxi = trunc(Bx),
-		Byi = trunc(By),
-		%% io:format("backdrop: Bx=~p,By=~p,Bxi=~p,Byi=~p\n", 
-		%%   [Bx,By,Bxi,Byi]),
-		if Bxi =/= 0 ->
-			epx:pixmap_scroll(Backdrop, Backdrop, Bxi, 0, 
-					  true, black);
-		   true ->
-			ok
-		end,
-		if Byi =/= 0 ->
-			epx:pixmap_scroll(Backdrop, Backdrop, 0, Byi, 
-					  true, black);
-		   true ->
-			ok
-		end,
-		epx:pixmap_copy_area(Backdrop, State#state.background,
-				     trunc(State#state.box),
-				     trunc(State#state.boy),
-				     0, 0, Width, Height, []),
-		State#state { bx = Bx-Bxi, by = By-Byi }
-	end,
     ets:foldl(
-      fun(S,_Acc) ->
-	      Ref = S#sprite.id,
-	      Wi   = trunc(S#sprite.width),
-	      Hi   = trunc(S#sprite.height),
-
-	      X0 = if S#sprite.sx == 0 ->
-			  S#sprite.x;
+      fun(Si,Acc) ->
+	      {Ax,Ay} =
+		  if Si#sprite.m /= 0 ->
+			  ets:foldl(fun(Sj,F) -> calc_gravity(F,Si,Sj) end,
+				    {0,0}, Tab);
 		     true ->
-			  S#sprite.x + S#sprite.sx * Ts
+			  {Si#sprite.ax, Si#sprite.ay}
 		  end,
-	      Y0 = if S#sprite.sy == 0 -> 
-			   S#sprite.y;
+	      Vx = Si#sprite.vx + Ax*Ts,
+	      Vy = Si#sprite.vy + Ay*Ts,
+		  
+	      X = Si#sprite.x + Vx*Ts,
+	      Y = Si#sprite.y + Vy*Ts,
+
+	      Av = if is_function(Si#sprite.anglef) ->
+			   (Si#sprite.anglef)(Si);
 		      true ->
-			   S#sprite.y + S#sprite.sy * Ts
+			   Si#sprite.angle
 		   end,
-	      Av = if is_function(S#sprite.anglef) ->
-			   (S#sprite.anglef)(S);
-		      true ->
-			   S#sprite.angle
-		   end,
-	      A0 = if S#sprite.sa == 0 ->
-			   Av;
-		      true ->
-			   Av + S#sprite.sa * Ts
-		   end,
+	      A0 = Av + Si#sprite.va * Ts,
 	      A = math2:fmod(A0, 360),
-	      Li = max(Wi,Hi),
-	      X = if S#sprite.wrap ->
-			  if X0 < -Li -> Width+Li;
-			     X0 >= Width+Li -> -Li; 
-			     true -> X0 
-			  end;
-		     true ->
-			  X0
-		  end,
-	      Y = if S#sprite.wrap ->
-			  if Y0 < -Li -> Height+Li; 
-			     Y0 >= Height+Li -> -Li;
-			     true -> Y0 
-			  end;
-		     true ->
-			  Y0
-		  end,
-	      Sx0 = S#sprite.sx,
-	      Sx = if not S#sprite.wrap ->
-			   if X0 < 0, Sx0<0 -> -Sx0;
-			      X0 >= Width-Li,Sx0>0 -> -Sx0;
-			      true -> Sx0
-			   end;
-		      true ->
-			   Sx0
-		   end,
-	      Sy0 = S#sprite.sy,
-	      Sy = if not S#sprite.wrap ->
-			   if Y0 < 0, Sy0<0 -> -Sy0;
-			      Y0 >= Height-Li,Sy0>0 -> -Sy0;
-			      true -> Sy0
-			   end;
-		      true ->
-			   Sy0
-		   end,
-	      Angle = radians(A),
+	      [Si#sprite{x=X,y=Y,vx=Vx,vy=Vy,ax=Ax,ay=Ay,angle=A} | Acc]
+      end, [], State#state.sprites).
+%%
+%% calculate crossing point between:
+%% P(t) =  ((X1-X0)*t + X0, (Y1-Y0)*t + Y0)
+%% Q(s) =  ((X3-X2)*s + X2, (Y3-Y2)*s + Y2)
+%% return false if not crossing or {X,Y} the crossing point
+%%
+line_intersect(X0,Y0,X1,Y1, X2,Y2,X3,Y3) ->
+    S10X = (X1-X0), S10Y = (Y1-Y0),
+    S32X = (X3-X2), S32Y = (Y3-Y2),
+    Sd   = S10X*S32Y - S32X*S10Y,
+    if Sd == 0 -> %% fixme: check lines overlap
+	    false;
+       true ->
+	    S02X = (X0-X2), 
+	    S02Y = (Y0-Y2),
+	    Sn = S10X*S02Y - S10Y*S02X,
+	    %% Tn = S32X*S02Y - S32Y*S02X,
+	    S = Sn/Sd,
+	    if S < 0; S > 1 -> {false,S};
+	       true -> {S32X*S + X2, S32Y*S + Y2}
+	    end
+    end.
 
-	      ets:update_element(Tab, Ref, [{#sprite.x,X},
-					    {#sprite.y,Y},
-					    {#sprite.sx,Sx},
-					    {#sprite.sy,Sy},
-					    {#sprite.angle, A}]),
-
-	      if Angle == 0 ->
-		      epx:pixmap_copy_area(
-			S#sprite.rd,
-			State#state.background,
-			0, 0, 
-			trunc(X), trunc(Y),
-			Wi, Hi, [blend]);
-		 true ->
-		      epx:pixmap_rotate_area(
-			S#sprite.rd,
-			State#state.background,
-			Angle,
-			0, 0,
-			trunc(S#sprite.xo),
-			trunc(S#sprite.yo),
-			trunc(X + S#sprite.xo),
-			trunc(Y + S#sprite.yo),
-			Wi, Hi, [blend])
-	      end
-      end, [], Tab),
-    State1.
+%% newton mass equation F1 = F2 = G*(M1*M2)/R^2, a = F/m
+calc_gravity(F,#sprite{id=ID},#sprite{id=ID}) ->
+    F;
+calc_gravity(_F={Fx,Fy},
+	     #sprite{x=Xi,y=Yi,xo=Xoi,yo=Yoi}, 
+	     #sprite{x=Xj,y=Yj,xo=Xoj,yo=Yoj,m=Mj}) ->
+    Dx = (Xi+Xoi)-(Xj+Xoj),
+    Dy = (Yi+Yoi)-(Yj+Yoj),
+    R0 = math:sqrt(Dx*Dx + Dy*Dy),
+    %% disallow that radius is too small, fixme make better 
+    Wij = max(Xoi,Xoj),
+    R  = max(R0, Wij),
+    Nx = Dx/R,
+    Ny = Dy/R,
+    Fij = (-?G*Mj)/(R*R),
+    {Fx+Fij*Nx, Fy+Fij*Ny}.
 
 
+%% update backdrop image
+update_backdrop(State, _Ts) when State#state.backdrop =:= undefined ->
+    State;
+update_backdrop(State, Ts) ->
+    Backdrop = State#state.backdrop,
+    Bx = State#state.bx + State#state.bsx * Ts,
+    By = State#state.by + State#state.bsy * Ts,
+    Bxi = trunc(Bx),
+    Byi = trunc(By),
+    if Bxi =/= 0; Byi =/= 0 ->
+	    epx:pixmap_scroll(Backdrop, Backdrop, Bxi, Byi, true, black);
+       true ->
+	    ok
+    end,
+    epx:pixmap_copy_area(Backdrop, State#state.background,
+			 trunc(State#state.box),
+			 trunc(State#state.boy),
+			 0, 0, State#state.width, State#state.height, []),
+    State#state { bx = Bx-Bxi, by = By-Byi }.
     
+
 update_window(State) ->
     epx:pixmap_copy_to(State#state.background, State#state.pixels),
     epx:pixmap_draw(State#state.pixels, 
@@ -538,7 +619,17 @@ update_window(State) ->
 		    State#state.width, 
 		    State#state.height).
 
-    
+
+may_overlap(#sprite{x=Xi,y=Yi,width=Wi,height=Hi},
+	    #sprite{x=Xj,y=Yj,width=Wj,height=Hj}) ->
+    case epx_rect:intersect({Xi-Wi/2,Yi-Hi/2,Wi,Hi},
+			    {Xj-Wj/2,Yj-Hj/2,Wj,Hj}) of
+	{0,0,0,0} ->
+	    false;
+	_ ->
+	    true
+    end.
+
 time_step(Time, N, Tr, Fun, Acc) ->
     Td = trunc(Time*1000000),  %% number of us to reach target
     T0 = time_us(),            %% start time
@@ -562,7 +653,6 @@ time_step_(Ti, Tj, Ts, Td, Tr, T0, T1, Fun, Acc) ->
 		    time_step_(time_us(),Tk,Ts, Td, Tr, T0, T1, Fun, Acc1)
 	    end
     end.
-
 
 time_us() ->
     {Ms,S,Us} = os:timestamp(),
@@ -598,13 +688,3 @@ wrap(X, Min, Max) when X < Min ->
     L = (Max-Min)+1,
     Max - math2:fmod(Min-X, L);
 wrap(X, _Min, _Max) -> X.
-
-
-random_rgb() ->
-    { 255, random(0,255), random(0,255), random(0,255) }.
-
-random_argb() ->
-    { random(0,255), random(0,255), random(0,255), random(0,255) }.
-
-random(A, B) when is_integer(A), A =< B ->   
-    random:uniform((B - A) + 1) - 1 + A.

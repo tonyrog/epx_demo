@@ -66,15 +66,15 @@ text_demo(Filename, Text) ->
     {ok,Pic} = epx:pixmap_create(320,240),
     epx:pixmap_fill(Pic, {80,80,80}),
     epx:pixmap_attach(Pic),
-    {ok,Font} = efnt:open(Filename),
-    ok = efnt:map(Font),
-    {ok,FInfo} = efnt:info(Font),
+    {ok,Font} = epx_font:open(Filename),
+    ok = epx_font:map(Font),
+    {ok,FInfo} = epx_font:info(Font),
     io:format("Font Info = ~p\n", [FInfo]),
-    egc:set_font(Font),
-    egc:set_foreground_color({0,255,0,0}),
+    epx_gc:set_font(Font),
+    epx_gc:set_foreground_color({0,255,0,0}),
     
-    efnt:draw_string(Pic, 10, FInfo#epx_font_info.ascent, Text),
-    epixmap:draw(Pic, Win, 0, 0, 0, 0, 320, 240),
+    epx_font:draw_string(Pic, 10, FInfo#epx_font_info.ascent, Text),
+    epx:pixmap_draw(Pic, Win, 0, 0, 0, 0, 320, 240),
     receive
 	{eevent, Win, close} ->
 	    ewindow:destroy(Pic),

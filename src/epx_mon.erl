@@ -472,7 +472,6 @@ draw_ps_2(Em,E0={J0,Garb},X0,X1,Y) ->
 	    E0
     end.
 
-
 -define(T, 0,0,0,0).
 -define(R, 255,255,0,0).
 -define(G, 255,0,255,0).
@@ -1150,7 +1149,3 @@ getopt(Key, Opts) ->
 	{value,{_,Value}} ->
 	    Value
     end.
-
-	  
-
-		    

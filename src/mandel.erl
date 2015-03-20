@@ -36,8 +36,8 @@
 	  iter      %% max iteration
 	 }).
 
--define(debug(F,A), ok).
-%% -define(debug(F,A), io:format((F),(A))).
+%% -define(debug(F,A), ok).
+-define(debug(F,A), io:format((F),(A))).
 
 
 start() ->
@@ -136,7 +136,7 @@ update_win(S) ->
 update_win(S, X, Y, W, H) ->
     epx:pixmap_draw(S#s.pix, S#s.win, X, Y, X, Y, W, H).
 
-close(S) ->    
+close(S) ->
     if S#s.cl_clu == undefined ->
 	    ok;
        true ->
@@ -162,7 +162,7 @@ loop(S) ->
 	    epx:pixmap_copy_to(S#s.pix,S#s.spix), %% make a copy of the image
 	    case select(S, {X0,Y0}, {X0,Y0,1,1},false,R) of
 		{select, _Selection={{X0,Y0},{X1,Y1}}} ->
-		    ?debug("STOP SELECTION: area=~w\n", [Selection]),
+		    ?debug("STOP SELECTION: area=~w\n", [_Selection]),
 		    epx_gc:set_fill_style(none),
 		    P = new_view(S#s.view, rectangle(X0,Y0,X1,Y1),R),
 		    draw(S#s.win, S#s.pix, P, S),

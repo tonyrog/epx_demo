@@ -58,17 +58,32 @@ transform_loop(Transform, Pixmap, X, Y, Width, Height, Bg, BgW, BgH, Win) ->
 
 next_transform([{spin,From,From}|T]) -> T;
 next_transform([{spin,From,To}|T]) when From < To -> [{spin,From+1,To}|T];
-next_transform([{rotate,_A}|T]) -> T;
-next_transform([copy|T]) -> T;
+next_transform([_|T]) -> T;
 next_transform([]) -> [].
 
 transform([], _Pixmap, _X, _Y, _Width, _Height, _Bg) ->
     ok;
 transform([copy|_], Pixmap, X, Y, Width, Height, Bg) ->
-    epx:pixmap_copy_area(Pixmap, Bg, 0, 0, 
-			 X - (Width div 2), 
-			 Y - (Height div 2),
-			 Width, Height, []);
+    Cx = X - (Width div 2), 
+    Cy = Y - (Height div 2),
+    epx:pixmap_copy_area(Pixmap, Bg, 0, 0, Cx, Cy, Width, Height, []);
+transform([lightmap|_], Pixmap, X, Y, Width, Height, Bg) ->
+    %% calculate pixmap to light map ARGB => A
+    Lmap = epx:pixmap_create(Width, Height, l8),
+    epx:pixmap_copy_to(Pixmap, Lmap),
+    LmapData = epx:pixmap_get_pixels(Lmap, 0, 0, Width, Height),
+    ArgbData = epx:pixmap_get_pixels(Pixmap, 0, 0, Width, Height),
+    ZRGB = << <<0,R,G,B>> || <<_A,R,G,B>> <= ArgbData >>,
+    Pixmap2 = epx:pixmap_create(Width, Height, argb),
+    Cx = X - (Width div 2),
+    Cy = Y - (Height div 2),
+    epx_gc:set_fill_style(solid),
+    epx_gc:set_fill_color({0,255,0}),
+    epx:pixmap_draw_rectangle(Bg, epx_gc:current(),Cx,Cy,Width,Height),
+    epx:pixmap_put_pixels(Pixmap2, 0, 0, Width, Height, argb, ZRGB, []),
+    epx:pixmap_put_pixels(Pixmap2, 0, 0, Width, Height, a8, LmapData, [sum]),
+    epx:pixmap_copy_area(Pixmap2, Bg, 0, 0, Cx, Cy, Width, Height, [blend]);
+
 transform([{spin,Angle,_EndAngle}|T],Pixmap, X, Y, Width, Height, Bg)  ->
     transform([{rotate,Angle}|T],Pixmap, X, Y, Width, Height, Bg);
 transform([{rotate,Angle}|_], Pixmap, X, Y, Width, Height, Bg) ->
