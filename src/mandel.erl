@@ -36,8 +36,8 @@
 	  iter      %% max iteration
 	 }).
 
-%% -define(debug(F,A), ok).
--define(debug(F,A), io:format((F),(A))).
+-define(debug(F,A), ok).
+%% -define(debug(F,A), io:format((F),(A))).
 
 
 start() ->
@@ -56,10 +56,6 @@ start(X, Y, W, H, Opts) ->
     epx:start(),
     spawn_link(fun() -> init(X,Y,W,H,Opts) end).
 
-examples_dir() ->
-    filename:join(code:lib_dir(epx), "examples").
-
-    
 view0(W,H,Opts) ->
     #view { x=0, y=0, w=W, h=H, 
 	    x0 = -2.0, x1 = 1.0, 
@@ -524,8 +520,8 @@ zip([A|As],[B|Bs],[C|Cs],[D|Ds]) ->
 zip([],[],[],[]) ->
     [].
 
-calc_local(_D,_Global) ->
-    [];
+%% calc_local(_D,_Global) ->
+%%    [];
 calc_local(D,[W,H]) -> %% disabled right now
     %% Max work group size
     {ok,MaxWorkGroupSize}=cl:get_device_info(D,max_work_group_size),

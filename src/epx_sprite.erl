@@ -38,6 +38,8 @@
 -export([set_image/3]).
 -export([sprite_table/1]).
 
+-export([get_velocity/2]).
+
 -compile(export_all).
 
 %% gen_server callbacks
@@ -208,6 +210,18 @@ set_rotation(Game,Ref,Angle) when is_number(Angle) ->
     Tab = sprite_table(Game),
     ets:update_element(Tab, Ref, [{#sprite.angle,Angle}]),
     ok.
+
+%% get sprite x,y speed
+-spec get_velocity(Game::pid(),Ref::sprite_id()) -> 
+			  {Vx::number(),Vy::number()}.
+
+get_velocity(Game,Ref) when is_pid(Game),
+			    is_reference(Ref) ->
+    Tab = sprite_table(Game),
+    Vx = ets:lookup_element(Tab, Ref, #sprite.vx),
+    Vy = ets:lookup_element(Tab, Ref, #sprite.vy),
+    {Vx,Vy}.
+
 
 update_pixels(Game, Ref, Fun) ->
     Tab = sprite_table(Game),

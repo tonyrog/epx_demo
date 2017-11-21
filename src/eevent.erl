@@ -13,6 +13,7 @@ start() ->
       fun() ->
 	      Win = epx:window_create(50, 50, 100, 100,
 				      [key_press, key_release,
+				       no_auto_repeat,
 				       button_press, button_release,
 				       motion, configure, resize, focus,
 				       crossing,
@@ -27,6 +28,7 @@ start1() ->
       fun() ->
 	      Win = epx:window_create(50, 50, 100, 100,
 				      [key_press, key_release,
+				       no_auto_repeat,
 				       motion, configure, resize, focus,
 				       crossing]),
 	      epx:window_attach(Win),

@@ -1225,7 +1225,7 @@ start(Func, W, H) ->
     epx:window_attach(Win),
     [{_Delay,Image}|_] = epx_image:file(filename:join(code:priv_dir(epx),
 						      "erlang.png")),
-    Pix = epx_pixmap:create(W,H,argb),
+    Pix = epx:pixmap_create(W,H,argb),
     epx:pixmap_attach(Pix),
 
     S0 = #s { func=Func, tmo=infinity, win = Win, pix = Pix, 
