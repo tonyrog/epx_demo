@@ -129,11 +129,29 @@ temp() ->
 		]}
 	],
     start_link(Thermals).
-    
 
-	   
-			   
-	 
+%% Sample all data found on xbus.
+
+xbus() ->
+    xbus("*").
+
+xbus(Pattern) ->
+    Xbus = 
+	[{gauge,[{name,Topic},
+		 {foreground, orange},
+		 {min_value, 0.0},
+		 {max_value, 100.0},
+		 {probe,
+		  fun(_) ->
+			  case xbus:read(Topic) of
+			      [{_, Value, Ts}] ->
+				  [{Topic, Value}];
+			      _ ->
+				  []
+			  end
+		  end}
+		]} || {Topic,Meta} <- xbus:topics(Pattern)],
+    start_link(Xbus).
     
 %%%===================================================================
 %%% gen_server callbacks
@@ -238,6 +256,9 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_info({epx_event, Win, close}, State) ->
+    epx:window_detach(Win),
+    {stop, normal, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
