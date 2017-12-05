@@ -107,7 +107,7 @@ rotate(A0,Ux,Uy,Uz) when is_float(Ux), is_float(Uy), is_float(Uz) ->
 
 
 start() ->
-    start(640, 480, 1000).
+    start(640, 480, 3000).
 
 start(W, H, N) ->
     epx:start(),
@@ -121,7 +121,11 @@ start(W, H, N) ->
     Ps = make_random_points(N),
     View = perspective(),
     T0  = matrix:identity(4, 4, float32),
+    egear_subscribe(),
     loop(Window,Pixmap,W,H,Ps,View,0.0,0.0,0.0,T0).
+
+egear_subscribe() ->
+    catch egear_server:subscribe([{type,dial}]).
 
 loop(Window,Pixmap,W,H,Ps,View,X0,Y0,Z0,T) ->
     Ps1 = matrix:multiply(T, Ps),
@@ -181,6 +185,27 @@ loop(Window,Pixmap,W,H,Ps,View,X0,Y0,Z0,T) ->
 		 end,
 	    flush_motions(Window),
 	    loop(Window,Pixmap,W,H,Ps,View,X1,Y1,Z1,Tn);
+
+	{egear_event,ERef,Info} ->
+	    _Value = proplists:get_value(value,Info,0),
+	    Dir    = proplists:get_value(direction,Info,1),
+	    case proplists:get_value(index,Info,0) of
+		2 when is_integer(Dir) ->
+		    Tn = matrix:multiply(rotate(Dir, 1.0, 0.0, 0.0),T),
+		    flush_egear(ERef),
+		    loop(Window,Pixmap,W,H,Ps,View,X0,Y0,Z0,Tn);
+		3 when is_integer(Dir) ->
+		    Tn = matrix:multiply(rotate(Dir, 0.0, 1.0, 0.0),T),
+		    flush_egear(ERef),
+		    loop(Window,Pixmap,W,H,Ps,View,X0,Y0,Z0,Tn);
+		4 when is_integer(Dir) ->
+		    Tn = matrix:multiply(rotate(Dir, 0.0, 0.0, 1.0),T),
+		    flush_egear(ERef),
+		    loop(Window,Pixmap,W,H,Ps,View,X0,Y0,Z0,Tn);
+		_ ->
+		    loop(Window,Pixmap,W,H,Ps,View,X0,Y0,Z0,T)
+	    end;
+
 	{epx_event,Window, Event} ->
 	    io:format("event = ~p\n", [Event]),
 	    loop(Window,Pixmap,W,H,Ps,View,X0,Y0,Z0,T)
@@ -198,6 +223,14 @@ abs_transform(Ax, Ay, Az, T0) ->
     T2 = matrix:multiply(T1,rotate(Ay, 1.0, 0.0, 0.0)), %% Ay is around X-axis!
     T3 = matrix:multiply(T2,rotate(Az, 0.0, 0.0, 1.0)),
     T3.
+
+flush_egear(ERef) ->
+    receive
+	{egear_event,ERef,_Info} ->
+	    flush_egear(ERef)
+    after 0 ->
+	    ok
+    end.
 
 %% catch up with motions
 flush_motions(Window) ->
