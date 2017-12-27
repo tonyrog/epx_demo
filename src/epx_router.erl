@@ -8,9 +8,7 @@
 -module(epx_router).
 
 
--compile(export_all).
--import(lists, [foreach/2]).
--include_lib("epx/include/epx_image.hrl").
+-export([start/0, start/1, start/2]).
 
 -define(BGCOLOR, white).
 
@@ -21,9 +19,18 @@
 -define(XPAD,   2).
 -define(YPAD,   2).
 
-run() ->
-    run(50,30).
-run(N,M) ->
+start() ->
+    start(50,30).
+
+start([Arg]) when is_atom(Arg) ->
+    N = list_to_integer(atom_to_list(Arg)),
+    start(N,N);
+start([Arg1,Arg2]) when is_atom(Arg1), is_atom(Arg2) ->
+    N = list_to_integer(atom_to_list(Arg1)),
+    M = list_to_integer(atom_to_list(Arg1)),
+    start(N,M).
+
+start(N,M) ->
     epx:start(),
     spawn_link(fun() -> init(N,M) end).
 
@@ -45,6 +52,7 @@ init(N, M) ->
     ets:insert(color_reg, {4, cyan}),
     ets:insert(color_reg, {5, orange}),
     ets:insert(color_reg, {6, yellow}),
+    %% Create NxM routing processes
     Pxy = [spawn_link(fun() ->
 			      ets:insert(xy_reg, {{I,J},self()}),
 			      task_init(I,J,N,M) 
@@ -52,6 +60,7 @@ init(N, M) ->
 	      I <- lists:seq(1,N),
 	      J <- lists:seq(1,M) ],
     redraw(Pxy,Bg,Fg,Window),
+    %% start the for corners with red,green,blue,cyan
     send({1,1}, {route,{0,1},1}),
     send({N,1}, {route,{N+1,1},2}),
     send({1,M}, {route,{0,M},3}),
@@ -70,10 +79,10 @@ wait(Pxy,Bg,Fg,Window) ->
     end.
 
 redraw(Pxy,Bg,Fg,Window) ->
-    io:format("send redraw\n"),
+    %% io:format("send redraw\n"),
     lists:foreach(fun(Pid) -> Pid ! {redraw,self(),Bg} end, Pxy),
     lists:foreach(fun(Pid) -> receive {Pid,done} -> ok end end, Pxy),
-    io:format("swap\n"),
+    %% io:format("swap\n"),
     epx:pixmap_copy_to(Bg, Fg),
     epx:pixmap_draw(Fg, Window, 0, 0, 0, 0,
 		    epx:window_info(Window, width),
