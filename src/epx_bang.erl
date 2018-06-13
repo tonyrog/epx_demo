@@ -73,7 +73,7 @@ tasks_start(I) ->
 -define(INIT_RADIUS, 8).
 -define(EPS, 0.00001).
 
-task_init(I) ->
+task_init(_I) ->
     Color = color_random(),
     V0 = vector_random(-1,1,  -1, 1),
     V  = vector_norm(V0),

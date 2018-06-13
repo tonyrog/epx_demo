@@ -76,7 +76,7 @@ init(W, H) ->
     EWin = #w { win    = Win, 
 		pix    = Pix, 
 		font   = Font, 
-		t_redraw = erlang:now(),
+		t_redraw = erlang:system_time(micro_seconds),
 		ascent   =FInfo#epx_font_info.ascent,
 		descent  =FInfo#epx_font_info.descent,
 		width=W, 
@@ -265,8 +265,7 @@ draw_cl(W, C) ->
 %% if the message passing is stopped then they are moved apart again???
 
 redraw(W) ->
-    Td = timer:now_diff(erlang:now(), W#w.t_redraw),
-    %% {_, Rt} = statistics(runtime),
+    Td = erlang:system_time(micro_seconds) - W#w.t_redraw,
     epx_gc:set_font(W#w.font),
     ets:foldl(
       fun(P,_Acc) -> draw_p(W, P, Td) end, 0, W#w.ptab),
@@ -325,7 +324,7 @@ loop(W) ->
 	    redraw(W),
 	    update(W),
 	    erlang:start_timer(100, self(), redraw),
-	    loop(W#w { t_redraw = erlang:now()} );
+	    loop(W#w { t_redraw = erlang:system_time(micro_seconds)} );
 
 	{epx_event,Win,destroy} when Win == W#w.win ->
 	    ok;
@@ -424,7 +423,7 @@ do_out(W, Pid, T) ->
 	undefined ->
 	    W;
 	P ->
-	    T_last = timer:now_diff(T, P#p.t_in),
+	    T_last = T - P#p.t_in,
 	    T_sum = T_last + P#p.t_sum,
 	    insert_p(W, P#p { t_in=0, t_last=T_last, t_sum=T_sum}),
 	    WT_sum = T_last + W#w.t_sum,
@@ -483,7 +482,7 @@ new_p(W, Pid) when is_pid(Pid) ->
 	    undefined;
 	{heap_size,Sz} ->
 	    {X,Y} = random_point(W),
-	    Now = erlang:now(),
+	    Now = erlang:system_time(micro_seconds),
 	    Name = case process_info(Pid, registered_name) of
 		       [] -> pid_to_list(Pid);
 		       {registered_name,Nm} -> atom_to_list(Nm)
@@ -494,7 +493,7 @@ new_p(W, Pid) when is_pid(Pid) ->
     end;
 new_p(W, Port) when is_port(Port) ->
     {X,Y} = random_point(W),
-    Now = erlang:now(),
+    Now = erlang:system_time(micro_seconds),
     Name = case erlang:port_info(Port, registered_name) of
 	       [] -> erlang:port_to_list(Port);
 	       {registered_name, Nm} -> atom_to_list(Nm)
@@ -511,8 +510,3 @@ random_point(W) ->
     X = 10+rand:uniform(W#w.width-20)-1,
     Y = 10+rand:uniform(W#w.height-20)-1,
     {X,Y}.
-
-
-    
-
-

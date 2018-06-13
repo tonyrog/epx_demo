@@ -862,7 +862,7 @@ trigger_loop(Fun,Arg,Em,Timer,Buf) ->
 		    end
 	    end;
 	{timeout,Timer,_} ->
-	    add_event(Em,{erlang:now(),self(),trigger}),
+	    add_event(Em,{erlang:system_time(micro_seconds),self(),trigger}),
 	    add_buffer_events(Em,Buf)
     end.
 
@@ -1090,7 +1090,7 @@ add_event(Em,{Ts,ID,Info}) ->
 	_ -> 
 	    ok
     end,
-    ets:insert(Em#emon.etab, {ts_to_us(Ts),ID,Info}),
+    ets:insert(Em#emon.etab, {Ts,ID,Info}),
     Size = ets:info(Em#emon.etab, size),
     if Size > trunc(Em#emon.esize*1.25) ->
 	    del_evt(Em#emon.etab, ets:first(Em#emon.etab),
@@ -1135,9 +1135,6 @@ del_evt(ETab, Ti, I) ->
     Tj = ets:next(ETab, Ti),
     ets:delete(ETab, Ti),
     del_evt(ETab, Tj, I-1).
-
-ts_to_us({M,S,U}) ->
-    (M*1000000 + S)*1000000 + U.
 
 getopt(Key, Opts) ->
     case lists:keysearch(Key, 1, Opts) of

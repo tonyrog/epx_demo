@@ -1090,7 +1090,7 @@ step_y(S,Y0,[Segment|SegmentTail]) ->
 
 plot_2_segments(S, As=[A|_], Bs=[B|_]) ->
     {Ax,Ay} = coord(A),
-    {Bx,By} = coord(B),
+    {_Bx,By} = coord(B),
     Ay = By,  %% assert
     epixmap:draw_point(S#s.pix, Ax, Ay),
     update(S),
@@ -1529,8 +1529,6 @@ aaline(next, S) ->
 %% LINES DEMO
 %%
 lines(init, S) ->
-    {A,B,C} = erlang:now(),
-    rand:seed(A, B, C),
     {X0,Y0} = random_point(S),
     {X1,Y1} = random_point(S),
     X0s = rand:uniform(3),
