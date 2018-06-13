@@ -82,9 +82,6 @@ tasks_start(Width, Height) ->
 -define(EPS, 0.00001).
 
 task_init(X,Y) ->
-    {_,Sa,Sb} = erlang:now(),
-    {Sc,_} = erlang:statistics(wall_clock),
-    random:seed(Sa,Sb,Sc),
     update_info(X,Y),
     task_run(3,X,Y,40).
 
@@ -98,7 +95,7 @@ task_run(I,X,Y,TFrame) ->
     %% MR = {0.0, 0.299*F,0.587*F, 0114*F },
     %% MF = {MR,MR,MR,{1.0, 0.299*F,0.587*F, 0114*F  }},
     %% MC = {{1.0,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1}},
-    %% R = random:uniform(),
+    %% R = rand:uniform(),
     %% RC = {{R,0,1-R,0},{0,R,0,1-R},{0,1-R,R,0},{1-R,0,0,R}},
     %% C1 = color_mult(RC, C),
     MR = {0.0, 0.299*F,0.587*F, 0114*F },
@@ -116,7 +113,7 @@ clamp(X) when X > 255 -> 255;
 clamp(X) -> X.
 
 color_random() ->
-    {random:uniform(256)-1,random:uniform(256)-1,random:uniform(256)-1}.
+    {rand:uniform(256)-1,rand:uniform(256)-1,rand:uniform(256)-1}.
 
 %% T=0 => C0,  T=1 => C1
 color_interp(_, C0,C0)  -> C0;
@@ -176,7 +173,7 @@ vector_random() ->
     vector_random(-1,1,-1,1).
 
 vector_random(X0,X1,Y0,Y1) ->
-    {(X1-X0)*random:uniform()+X0, (Y1-Y0)*random:uniform()+Y0}.
+    {(X1-X0)*rand:uniform()+X0, (Y1-Y0)*rand:uniform()+Y0}.
 
 vector_norm({X,Y}) ->
     L = math:sqrt(X*X + Y*Y),

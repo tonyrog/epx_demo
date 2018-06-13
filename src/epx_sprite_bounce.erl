@@ -90,7 +90,7 @@ random_argb() ->
     { randomi(0,255), randomi(0,255), randomi(0,255), randomi(0,255) }.
 
 randomi(A, B) when is_integer(A), is_integer(B), A =< B ->   
-    random:uniform((B - A) + 1) - 1 + A.
+    rand:uniform((B - A) + 1) - 1 + A.
 
 randomf(A, B) when is_number(A), is_number(B), A =< B ->
-    random:uniform()*(B-A) + A.
+    rand:uniform()*(B-A) + A.

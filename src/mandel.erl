@@ -587,7 +587,7 @@ colors_random(N) ->
 colors_random(0,Acc) -> 
     list_to_tuple([<<255,0,0,0>>|Acc]);
 colors_random(I,Acc) ->
-    colors_random(I-1,[ <<255,(random:uniform(16#1000000)-1):24>> | Acc]).
+    colors_random(I-1,[ <<255,(rand:uniform(16#1000000)-1):24>> | Acc]).
 
 %% interpolate N colors between ColorA and ColorB
 colors_interp(N,ColorA,ColorB) ->

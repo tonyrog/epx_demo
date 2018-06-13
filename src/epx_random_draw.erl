@@ -139,13 +139,13 @@ loop(I, Func, Win, Pix, W, H) ->
     loop(I-1, Func, Win, Pix, W, H).
 
 random_interval(L, H) when L =< H ->
-    L + random:uniform((H - L) + 1) - 1.
+    L + rand:uniform((H - L) + 1) - 1.
 
 random_point(W,H) ->
-    {random:uniform(W)-1, random:uniform(H)-1}.
+    {rand:uniform(W)-1, rand:uniform(H)-1}.
 
 random_color() ->
-    {random:uniform(200)+50,
-     random:uniform(200)+50,     
-     random:uniform(200)+50,
-     random:uniform(200)+50}.
+    {rand:uniform(200)+50,
+     rand:uniform(200)+50,     
+     rand:uniform(200)+50,
+     rand:uniform(200)+50}.

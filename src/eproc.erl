@@ -508,8 +508,8 @@ new_p(W, Name) when is_atom(Name) ->
     
 
 random_point(W) ->
-    X = 10+random:uniform(W#w.width-20)-1,
-    Y = 10+random:uniform(W#w.height-20)-1,
+    X = 10+rand:uniform(W#w.width-20)-1,
+    Y = 10+rand:uniform(W#w.height-20)-1,
     {X,Y}.
 
 

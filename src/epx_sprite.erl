@@ -277,7 +277,6 @@ init(Options) ->
     Color  = proplists:get_value(color, Options, ?DEFAULT_COLOR),
     Format = proplists:get_value(format, Options, ?DEFAULT_FORMAT),
     Interval = proplists:get_value(interval, Options, ?DEFAULT_INTERVAL),
-    random:seed(erlang:now()),
     Pixels = epx:pixmap_create(Width,Height,Format),
     epx:pixmap_attach(Pixels),
     Background = epx:pixmap_create(Width,Height,Format),

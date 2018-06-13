@@ -103,7 +103,6 @@ redraw(Pxy,Bg,Fg,Window) ->
 %%      C
 %%
 task_init(I,J,N,M) ->
-    random:seed(erlang:now()),
     %% neighbour map
     Nv = {{I+1,J},{I,J-1},{I-1,J},{I,J+1}},
     %% valid neighbour indices
@@ -181,7 +180,7 @@ task_redraw(Pixmap,I,J,_RULD={R,U,L,D}) ->
 
 %% randomly select N elements from the list Xs
 random_list(Xs, N) ->
-    Ys = [X || {_,X} <- lists:sort([{random:uniform(),X} || X <- Xs])],
+    Ys = [X || {_,X} <- lists:sort([{rand:uniform(),X} || X <- Xs])],
     lists:sublist(Ys, N).
 
 

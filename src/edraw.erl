@@ -1530,13 +1530,13 @@ aaline(next, S) ->
 %%
 lines(init, S) ->
     {A,B,C} = erlang:now(),
-    random:seed(A, B, C),
+    rand:seed(A, B, C),
     {X0,Y0} = random_point(S),
     {X1,Y1} = random_point(S),
-    X0s = random:uniform(3),
-    Y0s = random:uniform(3),
-    X1s = random:uniform(3),
-    Y1s = random:uniform(3),
+    X0s = rand:uniform(3),
+    Y0s = rand:uniform(3),
+    X1s = rand:uniform(3),
+    Y1s = rand:uniform(3),
     Color = random_color(),
     L = {{X0,Y0,X1,Y1},{X0s,Y0s,X1s,Y1s},Color},
     S#s { arg = {10,1.1,[L]}};
@@ -1581,17 +1581,17 @@ update_trail(I,K,[{P,S,{R,G,B}}|Ls]) ->
     [{P,S,{R1,G1,B1}}|update_trail(I-1,K+0.1,Ls)].
 
 random_color() ->
-    {random:uniform(200)+50,
-     random:uniform(200)+50,
-     random:uniform(200)+50}.
+    {rand:uniform(200)+50,
+     rand:uniform(200)+50,
+     rand:uniform(200)+50}.
 
 random_point(S) ->
-    X = random:uniform(S#s.width)-1,
-    Y = random:uniform(S#s.height)-1,
+    X = rand:uniform(S#s.width)-1,
+    Y = rand:uniform(S#s.height)-1,
     {X,Y}.
 
 random_interval(Min,Max) ->
-    V = random:uniform((Max - Min)+1)-1,  %% 0 .. (Max-Min)
+    V = rand:uniform((Max - Min)+1)-1,  %% 0 .. (Max-Min)
     Min + V.
 
 rad(Deg) ->

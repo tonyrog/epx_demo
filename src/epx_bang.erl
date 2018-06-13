@@ -74,8 +74,6 @@ tasks_start(I) ->
 -define(EPS, 0.00001).
 
 task_init(I) ->
-    {_,Sa,Sb} = erlang:now(),
-    random:seed(Sa,Sb,I),
     Color = color_random(),
     V0 = vector_random(-1,1,  -1, 1),
     V  = vector_norm(V0),
@@ -84,10 +82,11 @@ task_init(I) ->
     H = epx:pixmap_info(Back, height),
     R = ?INIT_RADIUS,
     P  = vector_random(R, W-R, R, H-R),
-    task_init(random:seed(), P, V, R, Color).
+    Seed = rand:export_seed(),
+    task_init(Seed, P, V, R, Color).
 
 task_init(Seed, P, V, R, Color) ->
-    random:seed(Seed),
+    rand:seed(Seed),
     Back = ets:lookup_element(pixmap, current, 2),
     W = epx:pixmap_info(Back, width),
     H = epx:pixmap_info(Back, height),
@@ -115,9 +114,9 @@ update_info(Pk,V,R,Color) ->
 
 %% random broadcast a random color stamp
 task_broadcast(Zj) ->
-    Draw = random:uniform(10000),
+    Draw = rand:uniform(10000),
     if Draw =< 3 ->
-	    Lod   = random:uniform(?DRAW_N),
+	    Lod   = rand:uniform(?DRAW_N),
 	    Color = color_random(),
 	    if Lod >= ?DRAW_N - (?DRAW_N div 16) ->
 		    broadcast(4, Zj, {color,Color});
@@ -176,7 +175,9 @@ task_explode(Z,P,_V,R,_Color0) ->
 	      V1 = vector_dir(A*I),
 	      P1 = vector_add(P,vector_scale(2,V1)),
 	      spawn(fun() ->
-			    task_init(random:seed(),P1,V1,?INIT_RADIUS,Color)
+			    rand:uniform(),
+			    task_init(rand:export_seed(),P1,V1,
+				      ?INIT_RADIUS,Color)
 		    end)
       end, lists:seq(0,N-2)),
     V1 = vector_dir(A*(N-1)),
@@ -249,7 +250,7 @@ clamp(X) when X > 255 -> 255;
 clamp(X) -> X.
 
 color_random() ->
-    {random:uniform(256)-1,random:uniform(256)-1,random:uniform(256)-1}.
+    {rand:uniform(256)-1,rand:uniform(256)-1,rand:uniform(256)-1}.
 
 color_add({R0,G0,B0},{R1,G1,B1}) ->
     {clamp(R0+R1),clamp(G0+G1),clamp(B0+B1)}.
@@ -330,7 +331,7 @@ vector_random() ->
     vector_random(-1,1,-1,1).
 
 vector_random(X0,X1,Y0,Y1) ->
-    {(X1-X0)*random:uniform()+X0, (Y1-Y0)*random:uniform()+Y0}.
+    {(X1-X0)*rand:uniform()+X0, (Y1-Y0)*rand:uniform()+Y0}.
 
 vector_length({X,Y}) ->
     math:sqrt(X*X + Y*Y).

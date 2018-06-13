@@ -28,7 +28,6 @@ main() ->
 main(Width,Height,N) when is_integer(N) ->
     main(Width,Height,[randomi(10,30) || _ <- lists:seq(1, N)]);
 main(Width,Height,Rs) when is_list(Rs) ->
-    random:seed(now()),
     {ok,Game} = epx_sprite:start_link([{width,Width},{height,Height},
 				       {color,{255,0,0,255}},
 				       {format, argb},
@@ -100,7 +99,7 @@ random_argb() ->
     { randomi(0,255), randomi(0,255), randomi(0,255), randomi(0,255) }.
 
 randomi(A, B) when is_integer(A), is_integer(B), A =< B ->   
-    random:uniform((B - A) + 1) - 1 + A.
+    rand:uniform((B - A) + 1) - 1 + A.
 
 randomf(A, B) when is_number(A), is_number(B), A =< B ->
-    random:uniform()*(B-A) + A.
+    rand:uniform()*(B-A) + A.
