@@ -54,8 +54,8 @@ plot_points(Pixmap,W,H,J,M,Ps,Fs) when J =< M ->
     Fw = matrix:element(4,J,Fs),
     Az = matrix:element(3,J,Ps),
     %% get 2D coordinate
-    X = trunc(W*(1 + Fx/Fw)/2),
-    Y = trunc(H*(1 + Fy/Fw)/2),
+    X = W*(1 + Fx/Fw)/2,
+    Y = H*(1 + Fy/Fw)/2,
     L = min(255,max(0,trunc(255*(Az+0.5)))),
     %% Z = 255,
     epx:pixmap_put_pixel(Pixmap,X,Y,0,{L,L,L}),
