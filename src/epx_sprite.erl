@@ -466,8 +466,8 @@ redraw_sprites(Sprites, State) ->
 		   Si#sprite.rd,
 		   State#state.background,
 		   0, 0, 
-		   trunc(Si#sprite.x), trunc(Si#sprite.y),
-		   trunc(Si#sprite.width), trunc(Si#sprite.height),
+		   Si#sprite.x, Si#sprite.y,
+		   Si#sprite.width, Si#sprite.height,
 		   [blend]);
 	    true ->
 		 epx:pixmap_rotate_area(
@@ -475,11 +475,11 @@ redraw_sprites(Sprites, State) ->
 		   State#state.background,
 		   Angle,
 		   0, 0,
-		   trunc(Si#sprite.xo),
-		   trunc(Si#sprite.yo),
-		   trunc(Si#sprite.x + Si#sprite.xo),
-		   trunc(Si#sprite.y + Si#sprite.yo),
-		   trunc(Si#sprite.width), trunc(Si#sprite.height),
+		   Si#sprite.xo,
+		   Si#sprite.yo,
+		   Si#sprite.x + Si#sprite.xo,
+		   Si#sprite.y + Si#sprite.yo,
+		   Si#sprite.width, Si#sprite.height,
 		   [blend])
 	 end
       end || Si <- Sprites],
@@ -611,18 +611,12 @@ update_backdrop(State, Ts) ->
     Backdrop = State#state.backdrop,
     Bx = State#state.bx + State#state.bsx * Ts,
     By = State#state.by + State#state.bsy * Ts,
-    Bxi = trunc(Bx),
-    Byi = trunc(By),
-    if Bxi =/= 0; Byi =/= 0 ->
-	    epx:pixmap_scroll(Backdrop, Backdrop, Bxi, Byi, true, black);
-       true ->
-	    ok
-    end,
+    epx:pixmap_scroll(Backdrop, Backdrop, Bx, By, true, black),
     epx:pixmap_copy_area(Backdrop, State#state.background,
-			 trunc(State#state.box),
-			 trunc(State#state.boy),
+			 State#state.box,
+			 State#state.boy,
 			 0, 0, State#state.width, State#state.height, []),
-    State#state { bx = Bx-Bxi, by = By-Byi }.
+    State#state { bx = Bx-floor(Bx), by = By-floor(By) }.
     
 
 update_window(State) ->

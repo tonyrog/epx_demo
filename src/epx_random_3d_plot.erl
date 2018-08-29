@@ -12,7 +12,6 @@
 %%  Test use of matrix and epx
 
 %% create random sample within the -0.5 - 0.5 cube
-
 make_random_points(N) ->
     %% random vector is 4xN vector each column is a 3D point
     Pts = matrix:uniform(4, N, float32),
@@ -20,6 +19,29 @@ make_random_points(N) ->
     %% Orient values around 0,0,0 keep
     matrix:subtract(Pts, 0.5).
 
+%% create N random points on the unit globe
+make_globe_points(N) ->
+    Ptr = matrix:create(4, N, float32, <<>>),
+    set_globe_points_(Ptr, N),
+    Ptr.
+
+%% x = sqrt(1.0 - y^2)
+%% x = sqrt(1.0 - (x^2 + y^2))
+
+set_globe_points_(_Ptr, 0) ->
+    ok;
+set_globe_points_(Ptr, J) ->
+    Ax = rand:uniform()*360,
+    Ay = rand:uniform()*360,
+    Az = rand:uniform()*360,
+    P0 = matrix:from_list([[1.0,0.0,0.0,0.0]],float32),
+    [[X,Y,Z,W]] = matrix:to_list(abs_transform(Ax,Ay,Az,P0)),
+    matrix:setelement(1,J,Ptr,X),
+    matrix:setelement(2,J,Ptr,Y),
+    matrix:setelement(3,J,Ptr,Z),
+    matrix:setelement(4,J,Ptr,W),
+    set_globe_points_(Ptr, J-1).
+    
 %% create perspective projection
 perspective() ->
     perspective({0.0,0.0,4.0}, {0.0,0.0,0.0}, {0.0,0.0,2.0}).
@@ -42,7 +64,7 @@ draw_points(Pixmap,{_Fow,CameraVec,EyeMatrix,CameraTransform},Ps) ->
     W = epx:pixmap_info(Pixmap, width),
     H = epx:pixmap_info(Pixmap, height),
     {4,M} = matrix:size(Ps),  %% M points to transform
-    Ps1 = matrix:subtract(Ps,matrix:cdata(M,CameraVec)),
+    Ps1 = matrix:subtract(Ps,matrix:rep(1,M,CameraVec)),
     Ds = matrix:multiply(CameraTransform, Ps1),
     Fs = matrix:multiply(EyeMatrix, Ds),
     plot_points(Pixmap,W,H,1,M,Ps,Fs).
@@ -54,8 +76,8 @@ plot_points(Pixmap,W,H,J,M,Ps,Fs) when J =< M ->
     Fw = matrix:element(4,J,Fs),
     Az = matrix:element(3,J,Ps),
     %% get 2D coordinate
-    X = trunc(W*(1 + Fx/Fw)/2),
-    Y = trunc(H*(1 + Fy/Fw)/2),
+    X = W*(1 + Fx/Fw)/2,
+    Y = H*(1 + Fy/Fw)/2,
     L = min(255,max(0,trunc(255*(Az+0.5)))),
     %% Z = 255,
     epx:pixmap_put_pixel(Pixmap,X,Y,0,{L,L,L}),
@@ -68,7 +90,7 @@ plot_points(_Pixmap,_W,_H,_J,_,_Ps,_FsT) ->
 translate(Tx,Ty,Tz) when is_float(Tx), is_float(Ty), is_float(Tz) ->
     Zero = 0.0,
     One = 1.0,
-    matrxi:from_list(
+    matrix:from_list(
       [[ One,  Zero, Zero, Zero ],
        [ Zero, One,  Zero, Zero ],
        [ Zero, Zero, One,  Zero ],
@@ -107,7 +129,7 @@ rotate(A0,Ux,Uy,Uz) when is_float(Ux), is_float(Uy), is_float(Uz) ->
 
 
 start() ->
-    start(640, 480, 3000).
+    start(640, 480, 4096).
 
 start(W, H, N) ->
     epx:start(),
@@ -118,7 +140,8 @@ start(W, H, N) ->
     Pixmap = epx:pixmap_create(W,H,argb),
     epx:pixmap_fill(Pixmap, black),
     epx:pixmap_attach(Pixmap),
-    Ps = make_random_points(N),
+    %% Ps = make_random_points(N),
+    Ps = make_globe_points(N),
     View = perspective(),
     T0  = matrix:identity(4, 4, float32),
     egear_subscribe(),
