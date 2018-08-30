@@ -8,7 +8,7 @@
 -module(epx_random_3d_plot).
 
 -compile(export_all).
-
+-include_lib("epx/include/epx_image.hrl").
 %%  Test use of matrix and epx
 
 %% create random sample within the -0.5 - 0.5 cube
@@ -17,13 +17,36 @@ make_random_points(N) ->
     Pts = matrix:uniform(4, N, float32),
     %% Pts = matrix:normal(4, N, float32),
     %% Orient values around 0,0,0 keep
-    matrix:subtract(Pts, 0.5).
+    Ptr = matrix:subtract(Pts, 0.5),
+    Pixels = [{255,0,255,0} || _ <- lists:seq(1,N)],
+    {Ptr,Pixels}.
 
 %% create N random points on the unit globe
 make_globe_points(N) ->
-    Ptr = matrix:create(4, N, float32, <<>>),
-    set_globe_points_(Ptr, N),
-    Ptr.
+    Pts = matrix:create(4, N, float32, <<>>),
+    set_globe_points_(Pts, N),
+    Pixels = [{255,255,0,0} || _ <- lists:seq(1,N)],
+    {Pts,Pixels}.
+
+make_image(File) ->
+    case epx_image:load(File) of
+	{ok,#epx_image {pixmaps=[Pixmap]}} ->
+	    W = epx:pixmap_info(Pixmap, width),
+	    H = epx:pixmap_info(Pixmap, height),
+	    io:format("loaded ~w pixels\n", [W*H]),
+	    Pts = matrix:create(4, W*H, float32, <<>>),
+	    Pixels = [epx:pixmap_get_pixel(Pixmap,X,Y) || 
+			 Y <- lists:seq(0,H-1), X <- lists:seq(0,W-1)],
+	    Z = 0.5,
+	    [begin
+		 J = X + Y*W + 1,
+		 matrix:setelement(1,J,Pts,X/W-0.5),
+		 matrix:setelement(2,J,Pts,Y/H-0.5),
+		 matrix:setelement(3,J,Pts,Z),
+		 matrix:setelement(4,J,Pts,0.0)
+	     end || Y <- lists:seq(0,H-1),X <- lists:seq(0,W-1)],
+	    {Pts,Pixels}
+    end.
 
 %% x = sqrt(1.0 - y^2)
 %% x = sqrt(1.0 - (x^2 + y^2))
@@ -60,29 +83,42 @@ perspective(_Camera={Cx,Cy,Cz},_Orientation={Ax,Ay,Az},_Eye={Ex,Ey,Ez}) ->
     {Fow,CameraVec,EyeMatrix,CameraTransform}.
 
 %% transform points for display
-draw_points(Pixmap,{_Fow,CameraVec,EyeMatrix,CameraTransform},Ps) ->
+draw_points(Pixmap,{_Fow,CameraVec,EyeMatrix,CameraTransform},Ps,Pix) ->
     W = epx:pixmap_info(Pixmap, width),
     H = epx:pixmap_info(Pixmap, height),
     {4,M} = matrix:size(Ps),  %% M points to transform
     Ps1 = matrix:subtract(Ps,matrix:rep(1,M,CameraVec)),
     Ds = matrix:multiply(CameraTransform, Ps1),
     Fs = matrix:multiply(EyeMatrix, Ds),
-    plot_points(Pixmap,W,H,1,M,Ps,Fs).
+    XY = project_2d(Fs,M,W,H),
+    plot_points(Pixmap,1,M,Ps,XY,Pix).
 
-plot_points(Pixmap,W,H,J,M,Ps,Fs) when J =< M ->
-    Fx = matrix:element(1,J,Fs),
-    Fy = matrix:element(2,J,Fs),
-    %% Fz = matrix:element(3,J,Fs),
-    Fw = matrix:element(4,J,Fs),
+%% X = W*(1 + Fx/Fw)/2,
+%% Y = H*(1 + Fy/Fw)/2,
+project_2d(Fs,M,Width,Height) ->
+    W = matrix:submatrix(4,1,1,M,Fs),
+    X = matrix:submatrix(1,1,1,M,Fs),
+    Y = matrix:submatrix(2,1,1,M,Fs),
+    Wi = matrix:reciprocal(W),
+    X1 = matrix:add(matrix:times(X, Wi), 1),
+    Y1 = matrix:add(matrix:times(Y, Wi), 1),
+    X2 = matrix:times(X1, Width/2),
+    Y2 = matrix:times(Y1, Height/2),
+    {X2,Y2}.
+
+plot_points(Pixmap,J,M,Ps,XYs={Xs,Ys},[{A,R,G,B}|Pix]) when J =< M ->
     Az = matrix:element(3,J,Ps),
-    %% get 2D coordinate
-    X = W*(1 + Fx/Fw)/2,
-    Y = H*(1 + Fy/Fw)/2,
-    L = min(255,max(0,trunc(255*(Az+0.5)))),
+    X = matrix:element(1,J,Xs),
+    Y = matrix:element(1,J,Ys),
+    A1 = min(255,max(0,trunc(A*(Az+0.5)))),
+    R1 = min(255,max(0,trunc(R*(Az+0.5)))),
+    G1 = min(255,max(0,trunc(G*(Az+0.5)))),
+    B1 = min(255,max(0,trunc(B*(Az+0.5)))),
+    %% L = min(255,max(0,trunc(255*(Az+0.5)))),
     %% Z = 255,
-    epx:pixmap_put_pixel(Pixmap,X,Y,0,{L,L,L}),
-    plot_points(Pixmap,W,H,J+1,M,Ps,Fs);
-plot_points(_Pixmap,_W,_H,_J,_,_Ps,_FsT) ->
+    epx:pixmap_put_pixel(Pixmap,X,Y,0,{A1,R1,G1,B1}),
+    plot_points(Pixmap,J+1,M,Ps,XYs,Pix);
+plot_points(_Pixmap,_J,_,_Ps,_XYs,[]) ->
     ok.
 
 -spec translate(Tx::float(),Ty::float(),Tz::float()) -> matrix:matrix().
@@ -140,20 +176,21 @@ start(W, H, N) ->
     Pixmap = epx:pixmap_create(W,H,argb),
     epx:pixmap_fill(Pixmap, black),
     epx:pixmap_attach(Pixmap),
-    %% Ps = make_random_points(N),
-    Ps = make_globe_points(N),
+    %% PsPix = make_random_points(N),
+    %% PsPix = make_globe_points(N),
+    PsPix = make_image(filename:join(code:priv_dir(epx_demo), "ros.png")),
     View = perspective(),
     T0  = matrix:identity(4, 4, float32),
     egear_subscribe(),
-    loop(Window,Pixmap,W,H,Ps,View,0.0,0.0,0.0,T0).
+    loop(Window,Pixmap,W,H,PsPix,View,0.0,0.0,0.0,T0).
 
 egear_subscribe() ->
     catch egear_server:subscribe([{type,dial}]).
 
-loop(Window,Pixmap,W,H,Ps,View,X0,Y0,Z0,T) ->
+loop(Window,Pixmap,W,H,PsPix={Ps,Pix},View,X0,Y0,Z0,T) ->
     Ps1 = matrix:multiply(T, Ps),
     epx:pixmap_fill(Pixmap, black),
-    draw_points(Pixmap, View, Ps1),
+    draw_points(Pixmap, View, Ps1, Pix),
     epx:pixmap_draw(Pixmap,Window,0,0,0,0,W,H),
     epx:sync(Pixmap,Window),
     receive
@@ -165,36 +202,36 @@ loop(Window,Pixmap,W,H,Ps,View,X0,Y0,Z0,T) ->
 	{epx_event,Window,{button_press,[left],{X,Y,Z}}} ->
 	    epx:window_enable_events(Window,[motion]),
 	    io:format("MOTION ON\n"),
-	    loop(Window,Pixmap,W,H,Ps,View,X,Y,Z,T);
+	    loop(Window,Pixmap,W,H,PsPix,View,X,Y,Z,T);
 
 	{epx_event,Window,{button_release,[left],{X,Y,Z}}} ->
 	    epx:window_disable_events(Window,[motion]),
 	    io:format("MOTION OFF\n"),
-	    loop(Window,Pixmap,W,H,Ps,View,X,Y,Z,T);
+	    loop(Window,Pixmap,W,H,PsPix,View,X,Y,Z,T);
 
 	{epx_event,Window,{button_press,[wheel_down],{X,Y,Z}}} ->
 	    %% Z axis zoom-in
 	    View1 = zmove(View, -0.2),
 	    flush_wheel(Window),
-	    loop(Window,Pixmap,W,H,Ps,View1,X,Y,Z,T);
+	    loop(Window,Pixmap,W,H,PsPix,View1,X,Y,Z,T);
 	
 	{epx_event,Window,{button_press,[wheel_up],{X,Y,Z}}} ->
 	    %% Z axis zoom-out
 	    View1 = zmove(View, +0.2),
 	    flush_wheel(Window),
-	    loop(Window,Pixmap,W,H,Ps,View1,X,Y,Z,T);
+	    loop(Window,Pixmap,W,H,PsPix,View1,X,Y,Z,T);
 
 	{epx_event,Window,{button_press,[wheel_left],{X,Y,Z}}} ->
 	    %% + Z-axis
 	    Tn = matrix:multiply(rotate(4.0, 0.0, 0.0, 1.0), T),
 	    flush_wheel(Window),
-	    loop(Window,Pixmap,W,H,Ps,View,X,Y,Z,Tn);
+	    loop(Window,Pixmap,W,H,PsPix,View,X,Y,Z,Tn);
 	
 	{epx_event,Window,{button_press,[wheel_right],{X,Y,Z}}} ->
 	    %% - Z-axis
 	    Tn = matrix:multiply(rotate(-4.0, 0.0, 0.0, 1.0), T),
 	    flush_wheel(Window),
-	    loop(Window,Pixmap,W,H,Ps,View,X,Y,Z,Tn);
+	    loop(Window,Pixmap,W,H,PsPix,View,X,Y,Z,Tn);
 
 	{epx_event,Window,{motion,[left],{X1,Y1,Z1}}} ->
 	    %% test, better to use Ax,Ay,Az!
@@ -207,7 +244,7 @@ loop(Window,Pixmap,W,H,Ps,View,X0,Y0,Z0,T) ->
 		     Dy -> matrix:multiply(rotate(-Dy, 1.0, 0.0, 0.0),T2)
 		 end,
 	    flush_motions(Window),
-	    loop(Window,Pixmap,W,H,Ps,View,X1,Y1,Z1,Tn);
+	    loop(Window,Pixmap,W,H,PsPix,View,X1,Y1,Z1,Tn);
 
 	{egear_event,ERef,Info} ->
 	    _Value = proplists:get_value(value,Info,0),
@@ -216,22 +253,22 @@ loop(Window,Pixmap,W,H,Ps,View,X0,Y0,Z0,T) ->
 		2 when is_integer(Dir) ->
 		    Tn = matrix:multiply(rotate(Dir, 1.0, 0.0, 0.0),T),
 		    flush_egear(ERef),
-		    loop(Window,Pixmap,W,H,Ps,View,X0,Y0,Z0,Tn);
+		    loop(Window,Pixmap,W,H,PsPix,View,X0,Y0,Z0,Tn);
 		3 when is_integer(Dir) ->
 		    Tn = matrix:multiply(rotate(Dir, 0.0, 1.0, 0.0),T),
 		    flush_egear(ERef),
-		    loop(Window,Pixmap,W,H,Ps,View,X0,Y0,Z0,Tn);
+		    loop(Window,Pixmap,W,H,PsPix,View,X0,Y0,Z0,Tn);
 		4 when is_integer(Dir) ->
 		    Tn = matrix:multiply(rotate(Dir, 0.0, 0.0, 1.0),T),
 		    flush_egear(ERef),
-		    loop(Window,Pixmap,W,H,Ps,View,X0,Y0,Z0,Tn);
+		    loop(Window,Pixmap,W,H,PsPix,View,X0,Y0,Z0,Tn);
 		_ ->
-		    loop(Window,Pixmap,W,H,Ps,View,X0,Y0,Z0,T)
+		    loop(Window,Pixmap,W,H,PsPix,View,X0,Y0,Z0,T)
 	    end;
 
 	{epx_event,Window, Event} ->
 	    io:format("event = ~p\n", [Event]),
-	    loop(Window,Pixmap,W,H,Ps,View,X0,Y0,Z0,T)
+	    loop(Window,Pixmap,W,H,PsPix,View,X0,Y0,Z0,T)
     end.
 
 zmove({Fow,CameraVec,EyeMatrix,CameraTransform}, Dz) ->
