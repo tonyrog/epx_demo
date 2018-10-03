@@ -8,10 +8,8 @@
 -module(epx_random_draw).
 -compile(export_all).
 
-
-
 draw_triangle_1() ->
-    draw_triangle_1(640,480,{320,10},{40,400},{600,400}).
+    draw_triangle_1(640,480,{320,10},{220,50},{420,100}).
 
 draw_triangle_1(W,H,P1,P2,P3) ->
     start(1,
@@ -181,39 +179,64 @@ draw_poly3_1(Pixmap,P0={X0,Y0},P1={X1,Y1},P2={X2,Y2},Color) ->
     Yd = max(Y0,Y1,Y2),
     V1 = {X1-X0, Y1-Y0},
     V2 = {X2-X0, Y2-Y0},
-    C12 = cross(V1,V2),
-    scan_y(Yu,Yd,Xl,Xr,P0,V1,V2,C12,Pixmap,Color),
+    K = cross(V1,V2),
+    scan_y(Yu,Yd,Xl,Xr,P0,V1,V2,K,Pixmap,Color),
     T1 = erlang:monotonic_time(),
     Time = erlang:convert_time_unit(T1 - T0, native, microsecond),
     io:format("time = ~wus\n", [Time]).
 
-scan_y(Y,Yd,_Xl,_Xr,_P0,_V1,_V2,_C12,_Pixmap,_Color) when Y > Yd ->
+scan_y(Y,Yd,_Xl,_Xr,_P0,_V1,_V2,_K,_Pixmap,_Color) when Y > Yd ->
     ok;
-scan_y(Y,Yd,Xl,Xr,P0={X0,Y0},V1={V1x,V1y},V2={V2x,V2y},C12,Pixmap,Color) ->
+scan_y(Y,Yd,Xl,Xr,P0={X0,Y0},V1={V1x,V1y},V2={V2x,V2y},K,Pixmap,Color) ->
     Dx = Xl - X0,
     Dy = Y  - Y0,
     S0 = (Dx*V2y - Dy*V2x),
     Si = V2y,
     T0 = (V1x*Dy - V1y*Dx),
-    Ti = -V1y,
-    scan_x(Xl,Xr,Y,C12,S0,Si,T0,Ti,Pixmap,Color),
-    scan_y(Y+1,Yd,Xl,Xr,P0,V1,V2,C12,Pixmap,Color).
+    Tj = -V1y,
+    I  = trunc(-S0/Si),
+    J  = trunc(-T0/Tj),
+    M = min(I,J),
+    io:format("I=~w, J=~w, min=~w\n", [I,J,M]),
+    scan_x(Xl,Xr,0,Y,K,S0,S0,Si,T0,T0,Tj,Pixmap,Color,false),
+    scan_y(Y+1,Yd,Xl,Xr,P0,V1,V2,K,Pixmap,Color).
 
-scan_x(X,Xr,_Y,_C12,_S,_Si,_T,_Ti,_Pixmap,_Color) when X > Xr ->
+%% S=S0/K, T=T0/K,
+%% C0 = {1,0,0}, C1 = {0,1,0}, C2 = {0,0,1},
+%% Color1 = add(add(mult(1-(S+T),C0),mult(S,C1)),mult(T,C2)),
+%% epx:pixmap_put_pixel(Pixmap,X,Y,rgb8(Color1));
+scan_x(X,Xr,_I,_Y,_K,_S0,_S,_Si,_T0,_T,_Tj,_Pixmap,_Color,Inside) 
+  when X > Xr ->
     ok;
-scan_x(X,Xr,Y,C12,S0,Si,T0,Ti,Pixmap,Color) ->
-    if C12>0, S0>=0, T0>=0, T0+S0 =< C12;
-       C12<0, S0<0, T0<0, T0+S0 >= C12 ->
-	    %% S=S0/C12, T=T0/C12,
-	    %% C0 = {1,0,0}, C1 = {0,1,0}, C2 = {0,0,1},
-	    %% Color1 = add(add(mult(1-(S+T),C0),mult(S,C1)),mult(T,C2)),
-	    %% epx:pixmap_put_pixel(Pixmap,X,Y,rgb8(Color1));
-	    epx:pixmap_put_pixel(Pixmap,X,Y,Color);
+scan_x(X,Xr,I,Y,K,S0,S,Si,T0,T,Tj,Pixmap,Color,Inside) when K > 0 ->
+    if S>=0, T>=0, T+S =< K -> %% S0+i*Si = 0
+	    if not Inside -> 
+		    io:format("S>: i=~w,x=~w\n", [I,X]);
+	       true -> ok
+	    end,
+	    epx:pixmap_put_pixel(Pixmap,X,Y,Color),
+	    scan_x(X+1,Xr,I+1,Y,K,S0,S+Si,Si,T0,T+Tj,Tj,Pixmap,Color,true);
        true ->
-	    ok
-    end,
-    scan_x(X+1,Xr,Y,C12,S0+Si,Si,T0+Ti,Ti,Pixmap,Color).
+	    scan_x(X+1,Xr,I+1,Y,K,S0,S+Si,Si,T0,T+Tj,Tj,Pixmap,Color,Inside)
+    end;
+scan_x(X,Xr,I,Y,K,S0,S,Si,T0,T,Tj,Pixmap,Color,Inside) when K < 0 ->
+    if S<0, T<0, T+S >= K->
+	    if not Inside ->
+		    io:format("S<: i=~w,x=~w\n", [I,X]);
+	       true -> ok
+	    end,	    
+	    epx:pixmap_put_pixel(Pixmap,X,Y,Color),
+	    scan_x(X+1,Xr,I+1,Y,K,S0,S+Si,Si,T0,T+Tj,Tj,Pixmap,Color,true);
+       true ->
+	    scan_x(X+1,Xr,I+1,Y,K,S0,S+Si,Si,T0,T+Tj,Tj,Pixmap,Color,Inside)
+    end.
 
+%% S = S0 + Si*I
+%% T = T0 + Tj*J
+%% S>=0, T>=0, T+S =< K
+%% S = S0 + Si*I = 0  => I = -S0/Si
+%% T = T0 + Tj*J = 0  => J = -T0/Sj
+%%
 
 mult({X0,Y0},{X1,Y1}) ->  {X0*X1,Y0*Y1};
 mult(A,{X1,Y1}) ->  {A*X1,A*Y1};
