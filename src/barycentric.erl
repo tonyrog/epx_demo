@@ -45,34 +45,36 @@
 draw(Pixmap,{X0,Y0},{X1,Y1},{X2,Y2},Color) ->
     draw(Pixmap,{X0,Y0,1.0},{X1,Y1,50.0},{X2,Y2,10.0},Color);
 draw(Pixmap,P0={X0,Y0,_},P1={X1,Y1,_},P2={X2,Y2,_},Color) ->
-    T0 = erlang:monotonic_time(),
+    Time0 = erlang:monotonic_time(),
     Xl = min(X0,X1,X2),
     Xr = max(X0,X1,X2),
     Yu = min(Y0,Y1,Y2),
     Yd = max(Y0,Y1,Y2),
-    V1 = {(X1-X0), (Y1-Y0)},
-    V2 = {(X2-X0), (Y2-Y0)},
+    V1 = {V1x=(X1-X0), V1y=(Y1-Y0)},
+    V2 = {V2x=(X2-X0), V2y=(Y2-Y0)},
     K = cross(V1,V2),
+    Qx = Xl - X0,
+    Qy = Yu - Y0,
+    S0 = (Qx*V2y - Qy*V2x),
+    T0 = (V1x*Qy - V1y*Qx),
     Tri = #triangle{ p0=P0, p1=P1, p2=P2, color=Color, k=K },
-    scan_y(Yu,Yd,Xl,Xr,P0,V1,V2,K,Pixmap,Tri),
-    T1 = erlang:monotonic_time(),
-    Time = erlang:convert_time_unit(T1-T0, native, microsecond),
+    scan_y(Yu,Yd,S0,T0,Xl,Xr,P0,V1,V2,K,Pixmap,Tri),
+    Time1 = erlang:monotonic_time(),
+    Time = erlang:convert_time_unit(Time1-Time0, native, microsecond),
     io:format("time = ~wus\n", [Time]).
 
-scan_y(Y,Yd,Xl,Xr,P0={X0,Y0,_},V1={V1x,V1y},V2={V2x,V2y},K,Pixmap,Tri) ->
+scan_y(Y,Yd,S0,T0,Xl,Xr,P0={X0,Y0,_},V1={V1x,V1y},V2={V2x,V2y},K,Pixmap,Tri) ->
     if Y > Yd ->
 	    ok;
        true ->
-	    Qx = Xl - X0,
-	    Qy = Y - Y0,
-	    S0 = (Qx*V2y - Qy*V2x),
-	    T0 = (V1x*Qy - V1y*Qx),
+	    S01 = S0 - V2x,
+	    T01 = T0 + V1x,
 	    if K > 0 ->
-		    scan_x_kgto(Xl,Xr,0,Y,K,S0,V2y,T0,-V1y,Pixmap,Tri);
+		    scan_x_kgto(Xl,Xr,0,Y,K,S01,V2y,T01,-V1y,Pixmap,Tri);
 	       true ->
-		    scan_x_klto(Xl,Xr,0,Y,K,S0,V2y,T0,-V1y,Pixmap,Tri)
+		    scan_x_klto(Xl,Xr,0,Y,K,S01,V2y,T01,-V1y,Pixmap,Tri)
 	    end,
-	    scan_y(Y+1,Yd,Xl,Xr,P0,V1,V2,K,Pixmap,Tri)
+	    scan_y(Y+1,Yd,S01,T01,Xl,Xr,P0,V1,V2,K,Pixmap,Tri)
     end.
 
 %% outside
