@@ -174,6 +174,12 @@ random_color() ->
 draw_poly3_1(Pixmap,P0,P1,P2,Color) ->
     barycentric:draw(Pixmap, P0, P1, P2, Color).
 
+draw_poly3_2(Pixmap,P0,P1,P2,_Color) ->
+    bresenham:draw_line(Pixmap, P0, P1, green),
+    bresenham:draw_line(Pixmap, P1, P2, red),
+    bresenham:draw_line(Pixmap, P2, P0, blue),
+    ok.
+
 mult({X0,Y0},{X1,Y1}) ->  {X0*X1,Y0*Y1};
 mult(A,{X1,Y1}) ->  {A*X1,A*Y1};
 mult({X0,Y0},B) ->  {X0*B,Y0*B};
@@ -197,81 +203,3 @@ sub({X0,Y0,Z0},B) ->  {X0-B,Y0-B,Z0-B}.
      
 rgb8({R,G,B}) -> {trunc(R*255),trunc(G*255),trunc(B*255)}.
     
-sign(X) when X < 0 -> -1;
-sign(X) when X > 0 -> 1;
-sign(_) -> 0.
-
-
-draw_poly3_2(Pixmap,P0,P1,P2,_Color) ->
-%%    epx_gc:set_foreground_color(green),
-%%    epx:draw_line(Pixmap, P0, P1),
-%%    epx_gc:set_foreground_color(red),
-%%    epx:draw_line(Pixmap, P1, P2),
-%%    epx_gc:set_foreground_color(blue),
-%%    epx:draw_line(Pixmap, P2, P0),
-
-    draw_line(Pixmap, P0, P1, green),
-    draw_line(Pixmap, P1, P2, red),
-    draw_line(Pixmap, P2, P0, blue),
-    ok.
-
-draw_line(Pixmap, P0={X0,Y0}, P1={X1,Y1}, Color) ->
-    Dx = X1-X0,
-    Dy = Y1-Y0,
-    if abs(Dy) < abs(Dx) ->
-	    if X0 < X1 ->
-		    io:format("line_low1\n"),
-		    line_low(Pixmap,P0,P1,Dx,Dy,Color);
-	       true ->
-		    io:format("line_low2\n"),
-		    line_low(Pixmap,P1,P0,-Dx,Dy,Color)
-	    end;
-       true ->
-	    if Y0 < Y1 ->
-		    io:format("line_high1\n"),
-		    line_high(Pixmap,P0,P1,Dx,Dy,Color);
-	       true ->
-		    io:format("line_high2\n"),
-		    line_high(Pixmap,P1,P0,Dx,-Dy,Color)
-	    end
-    end.
-
-
-line_low(Pixmap,{X0,Y0},{X1,_Y1},Dx,Dy,Color) ->
-    true = Dx > 0,
-    Yi = sign(Dy),
-    Dy1 = 2*abs(Dy),
-    D = Dy1 - Dx,
-    line_low_(Pixmap,abs(Dx),X0,Y0,Yi,D,2*Dx,Dy1,Color).
-
-line_low_(Pixmap,I,X,Y,Yi,D,Dx,Dy,Color) ->
-    if I =< 0 -> ok;
-       true ->
-	    epx:pixmap_put_pixel(Pixmap,X,Y,Color),
-	    if D > 0 ->
-		    line_low_(Pixmap,I-1,X+1,Y+Yi,Yi,D-Dx+Dy,Dx,Dy,Color);
-	       true ->
-		    line_low_(Pixmap,I-1,X+1,Y,Yi,D+Dy,Dx,Dy,Color)
-	    end
-    end.
-
-line_high(Pixmap,{X0,Y0},{_X1,Y1},Dx,Dy,Color) ->
-    true = Dy > 0,
-    Xi = sign(Dx),
-    Dx1 = 2*abs(Dx),
-    D = Dx1 - Dy,
-    line_high_(Pixmap,abs(Dy),Y0,X0,Xi,D,Dx1,2*Dy,Color).
-
-
-line_high_(Pixmap,I,Y,X,Xi,D,Dx,Dy,Color) ->
-    if I =< 0 -> ok;
-       true ->
-	    epx:pixmap_put_pixel(Pixmap,X,Y,Color),
-	    if D > 0 ->
-		    line_high_(Pixmap,I-1,Y+1,X+Xi,Xi,D-Dy+Dx,Dx,Dy,Color);
-	       true ->
-		    line_high_(Pixmap,I-1,Y+1,X,Xi,D+Dx,Dx,Dy,Color)
-	    end
-    end.
-
-

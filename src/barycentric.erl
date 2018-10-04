@@ -43,7 +43,7 @@
 %% possibly using simd vector operations
 
 draw(Pixmap,{X0,Y0},{X1,Y1},{X2,Y2},Color) ->
-    draw(Pixmap,{X0,Y0,1.0},{X1,Y1,50.0},{X2,Y2,10.0},Color);
+    draw(Pixmap,{X0,Y0,1.0},{X1,Y1,1.0},{X2,Y2,1.0},Color);
 draw(Pixmap,P0={X0,Y0,_},P1={X1,Y1,_},P2={X2,Y2,_},Color) ->
     Time0 = erlang:monotonic_time(),
     Xl = min(X0,X1,X2),
@@ -63,7 +63,7 @@ draw(Pixmap,P0={X0,Y0,_},P1={X1,Y1,_},P2={X2,Y2,_},Color) ->
     Time = erlang:convert_time_unit(Time1-Time0, native, microsecond),
     io:format("time = ~wus\n", [Time]).
 
-scan_y(Y,Yd,S0,T0,Xl,Xr,P0={X0,Y0,_},V1={V1x,V1y},V2={V2x,V2y},K,Pixmap,Tri) ->
+scan_y(Y,Yd,S0,T0,Xl,Xr,P0={_X0,_Y0,_},V1={V1x,V1y},V2={V2x,V2y},K,Pixmap,Tri) ->
     if Y > Yd ->
 	    ok;
        true ->
@@ -100,7 +100,7 @@ scan_x_kgti(X,Xr,I,Y,K,S,Si,T,Tj,Pixmap,Tri) ->
     end.
 
 scan_x_klto(X,Xr,I,Y,K,S,Si,T,Tj,Pixmap,Tri) ->
-    if  X > Xr -> ok;    
+    if  X > Xr -> ok;
 	S>=0; T>=0; T+S < K->
 	    scan_x_klto(X+1,Xr,I+1,Y,K,S+Si,Si,T+Tj,Tj,Pixmap,Tri);
 	true ->
