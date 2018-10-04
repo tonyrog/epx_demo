@@ -9,7 +9,7 @@
 -compile(export_all).
 
 draw_triangle_1() ->
-    draw_triangle_1(640,480,{320,10},{220,50},{420,100}).
+    draw_triangle_1(640,480,{320,10},{120,400},{520,400}).
 
 draw_triangle_1(W,H,P1,P2,P3) ->
     start(1,
@@ -19,7 +19,7 @@ draw_triangle_1(W,H,P1,P2,P3) ->
 	  end, W, H).
 
 draw_triangle_2() ->
-    draw_triangle_2(640,480,{100,10},{10,100},{200,200}).
+    draw_triangle_2(640,480,{320,10},{120,400},{520,400}).
 
 draw_triangle_2(W,H,P1,P2,P3) ->
     start(1,
@@ -171,72 +171,8 @@ random_color() ->
      rand:uniform(200)+50,
      rand:uniform(200)+50}.
 
-draw_poly3_1(Pixmap,P0={X0,Y0},P1={X1,Y1},P2={X2,Y2},Color) ->
-    T0 = erlang:monotonic_time(),
-    Xl = min(X0,X1,X2),
-    Xr = max(X0,X1,X2),
-    Yu = min(Y0,Y1,Y2),
-    Yd = max(Y0,Y1,Y2),
-    V1 = {X1-X0, Y1-Y0},
-    V2 = {X2-X0, Y2-Y0},
-    K = cross(V1,V2),
-    scan_y(Yu,Yd,Xl,Xr,P0,V1,V2,K,Pixmap,Color),
-    T1 = erlang:monotonic_time(),
-    Time = erlang:convert_time_unit(T1 - T0, native, microsecond),
-    io:format("time = ~wus\n", [Time]).
-
-scan_y(Y,Yd,_Xl,_Xr,_P0,_V1,_V2,_K,_Pixmap,_Color) when Y > Yd ->
-    ok;
-scan_y(Y,Yd,Xl,Xr,P0={X0,Y0},V1={V1x,V1y},V2={V2x,V2y},K,Pixmap,Color) ->
-    Dx = Xl - X0,
-    Dy = Y  - Y0,
-    S0 = (Dx*V2y - Dy*V2x),
-    Si = V2y,
-    T0 = (V1x*Dy - V1y*Dx),
-    Tj = -V1y,
-    I  = trunc(-S0/Si),
-    J  = trunc(-T0/Tj),
-    M = min(I,J),
-    io:format("I=~w, J=~w, min=~w\n", [I,J,M]),
-    scan_x(Xl,Xr,0,Y,K,S0,S0,Si,T0,T0,Tj,Pixmap,Color,false),
-    scan_y(Y+1,Yd,Xl,Xr,P0,V1,V2,K,Pixmap,Color).
-
-%% S=S0/K, T=T0/K,
-%% C0 = {1,0,0}, C1 = {0,1,0}, C2 = {0,0,1},
-%% Color1 = add(add(mult(1-(S+T),C0),mult(S,C1)),mult(T,C2)),
-%% epx:pixmap_put_pixel(Pixmap,X,Y,rgb8(Color1));
-scan_x(X,Xr,_I,_Y,_K,_S0,_S,_Si,_T0,_T,_Tj,_Pixmap,_Color,Inside) 
-  when X > Xr ->
-    ok;
-scan_x(X,Xr,I,Y,K,S0,S,Si,T0,T,Tj,Pixmap,Color,Inside) when K > 0 ->
-    if S>=0, T>=0, T+S =< K -> %% S0+i*Si = 0
-	    if not Inside -> 
-		    io:format("S>: i=~w,x=~w\n", [I,X]);
-	       true -> ok
-	    end,
-	    epx:pixmap_put_pixel(Pixmap,X,Y,Color),
-	    scan_x(X+1,Xr,I+1,Y,K,S0,S+Si,Si,T0,T+Tj,Tj,Pixmap,Color,true);
-       true ->
-	    scan_x(X+1,Xr,I+1,Y,K,S0,S+Si,Si,T0,T+Tj,Tj,Pixmap,Color,Inside)
-    end;
-scan_x(X,Xr,I,Y,K,S0,S,Si,T0,T,Tj,Pixmap,Color,Inside) when K < 0 ->
-    if S<0, T<0, T+S >= K->
-	    if not Inside ->
-		    io:format("S<: i=~w,x=~w\n", [I,X]);
-	       true -> ok
-	    end,	    
-	    epx:pixmap_put_pixel(Pixmap,X,Y,Color),
-	    scan_x(X+1,Xr,I+1,Y,K,S0,S+Si,Si,T0,T+Tj,Tj,Pixmap,Color,true);
-       true ->
-	    scan_x(X+1,Xr,I+1,Y,K,S0,S+Si,Si,T0,T+Tj,Tj,Pixmap,Color,Inside)
-    end.
-
-%% S = S0 + Si*I
-%% T = T0 + Tj*J
-%% S>=0, T>=0, T+S =< K
-%% S = S0 + Si*I = 0  => I = -S0/Si
-%% T = T0 + Tj*J = 0  => J = -T0/Sj
-%%
+draw_poly3_1(Pixmap,P0,P1,P2,Color) ->
+    barycentric:draw(Pixmap, P0, P1, P2, Color).
 
 mult({X0,Y0},{X1,Y1}) ->  {X0*X1,Y0*Y1};
 mult(A,{X1,Y1}) ->  {A*X1,A*Y1};
@@ -261,18 +197,19 @@ sub({X0,Y0,Z0},B) ->  {X0-B,Y0-B,Z0-B}.
      
 rgb8({R,G,B}) -> {trunc(R*255),trunc(G*255),trunc(B*255)}.
     
-
-cross({X0,Y0},{X1,Y1}) -> X0*Y1 - Y0*X1.
-
-max(A,B,C) -> max(C,max(A,B)).
-min(A,B,C) -> min(C,min(A,B)).
-
 sign(X) when X < 0 -> -1;
 sign(X) when X > 0 -> 1;
 sign(_) -> 0.
 
 
-draw_poly3_2(Pixmap,P0,P1,P2,Color) ->
+draw_poly3_2(Pixmap,P0,P1,P2,_Color) ->
+%%    epx_gc:set_foreground_color(green),
+%%    epx:draw_line(Pixmap, P0, P1),
+%%    epx_gc:set_foreground_color(red),
+%%    epx:draw_line(Pixmap, P1, P2),
+%%    epx_gc:set_foreground_color(blue),
+%%    epx:draw_line(Pixmap, P2, P0),
+
     draw_line(Pixmap, P0, P1, green),
     draw_line(Pixmap, P1, P2, red),
     draw_line(Pixmap, P2, P0, blue),
@@ -283,50 +220,58 @@ draw_line(Pixmap, P0={X0,Y0}, P1={X1,Y1}, Color) ->
     Dy = Y1-Y0,
     if abs(Dy) < abs(Dx) ->
 	    if X0 < X1 ->
+		    io:format("line_low1\n"),
 		    line_low(Pixmap,P0,P1,Dx,Dy,Color);
 	       true ->
+		    io:format("line_low2\n"),
 		    line_low(Pixmap,P1,P0,-Dx,Dy,Color)
 	    end;
        true ->
 	    if Y0 < Y1 ->
+		    io:format("line_high1\n"),
 		    line_high(Pixmap,P0,P1,Dx,Dy,Color);
-	       true ->	       
+	       true ->
+		    io:format("line_high2\n"),
 		    line_high(Pixmap,P1,P0,Dx,-Dy,Color)
 	    end
     end.
 
 
-line_low(Pixmap,{X0,Y0},{X1,Y1},Dx,Dy,Color) ->
+line_low(Pixmap,{X0,Y0},{X1,_Y1},Dx,Dy,Color) ->
     true = Dx > 0,
     Yi = sign(Dy),
     Dy1 = 2*abs(Dy),
     D = Dy1 - Dx,
-    line_low_(Pixmap,X0,X1,Y0,Yi,D,2*Dx,Dy1,Color).
+    line_low_(Pixmap,abs(Dx),X0,Y0,Yi,D,2*Dx,Dy1,Color).
 
-line_low_(Pixmap,X,X1,Y,Yi,D,Dx,Dy,Color) when X > X1 ->
-    ok;
-line_low_(Pixmap,X,X1,Y,Yi,D,Dx,Dy,Color) ->
-    epx:pixmap_put_pixel(Pixmap,X,Y,Color),
-    if D > 0 ->
-	    line_low_(Pixmap,X+1,X1,Y+Yi,Yi,D-Dx+Dy,Dx,Dy,Color);
+line_low_(Pixmap,I,X,Y,Yi,D,Dx,Dy,Color) ->
+    if I =< 0 -> ok;
        true ->
-	    line_low_(Pixmap,X+1,X1,Y,Yi,D+Dy,Dx,Dy,Color)
+	    epx:pixmap_put_pixel(Pixmap,X,Y,Color),
+	    if D > 0 ->
+		    line_low_(Pixmap,I-1,X+1,Y+Yi,Yi,D-Dx+Dy,Dx,Dy,Color);
+	       true ->
+		    line_low_(Pixmap,I-1,X+1,Y,Yi,D+Dy,Dx,Dy,Color)
+	    end
     end.
 
-line_high(Pixmap,{X0,Y0},{X1,Y1},Dx,Dy,Color) ->
+line_high(Pixmap,{X0,Y0},{_X1,Y1},Dx,Dy,Color) ->
     true = Dy > 0,
     Xi = sign(Dx),
     Dx1 = 2*abs(Dx),
     D = Dx1 - Dy,
-    line_high_(Pixmap,Y0,Y1,X0,Xi,D,Dx1,2*Dy,Color).
+    line_high_(Pixmap,abs(Dy),Y0,X0,Xi,D,Dx1,2*Dy,Color).
 
-line_high_(Pixmap,Y,Y1,X,Xi,D,Dx,Dy,Color) when Y > Y1 ->
-    ok;
-line_high_(Pixmap,Y,Y1,X,Xi,D,Dx,Dy,Color) ->
-    epx:pixmap_put_pixel(Pixmap,X,Y,Color),
-    if D > 0 ->
-	    line_high_(Pixmap,Y+1,Y1,X+Xi,Xi,D-Dy+Dx,Dx,Dy,Color);
+
+line_high_(Pixmap,I,Y,X,Xi,D,Dx,Dy,Color) ->
+    if I =< 0 -> ok;
        true ->
-	    line_high_(Pixmap,Y+1,Y1,X,Xi,D+Dx,Dx,Dy,Color)
+	    epx:pixmap_put_pixel(Pixmap,X,Y,Color),
+	    if D > 0 ->
+		    line_high_(Pixmap,I-1,Y+1,X+Xi,Xi,D-Dy+Dx,Dx,Dy,Color);
+	       true ->
+		    line_high_(Pixmap,I-1,Y+1,X,Xi,D+Dx,Dx,Dy,Color)
+	    end
     end.
+
 
