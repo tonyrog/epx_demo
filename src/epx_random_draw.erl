@@ -9,14 +9,31 @@
 -compile(export_all).
 
 draw_triangle_1() ->
-    draw_triangle_1(640,480,{320,10},{120,400},{520,400}).
-
-draw_triangle_1(W,H,P1,P2,P3) ->
+    W = 640,
+    H = 480,
     start(1,
 	  fun(Pixmap) ->
 		  Color = {127,255,0,0},
-		  draw_poly3_1(Pixmap, P1, P2, P3, Color)
+		  A = case get(angle) of
+			  undefined -> 0;
+			  A0 -> A0 + 10
+		      end,
+		  put(angle, A),
+		  Xc = 640 div 2,
+		  Yc = 480 div 2,
+		  R  = 50,
+		  P1 = {Xc+50*cos(A),    Yc+50*sin(A)},
+		  P2 = {Xc+50*cos(A+120),Yc+50*sin(A+120)},
+		  P3 = {Xc+50*cos(A+240),Yc+50*sin(A+240)},
+		  barycentric:draw_triangle(Pixmap, P1, P2, P3, Color)
 	  end, W, H).
+
+cos(A) -> math:cos(fmod(A,360) * math:pi()/180).
+sin(A) -> math:sin(fmod(A,360) * math:pi()/180).
+
+fmod(A,N) ->
+    I = trunc(A) div N,
+    A - I*N.
 
 draw_triangle_2() ->
     draw_triangle_2(640,480,{320,10},{120,400},{520,400}).
@@ -24,8 +41,12 @@ draw_triangle_2() ->
 draw_triangle_2(W,H,P1,P2,P3) ->
     start(1,
 	  fun(Pixmap) ->
-		  Color = {127,255,0,0},
-		  draw_poly3_2(Pixmap, P1, P2, P3, Color)
+		  R = {255,255,0,0},
+		  G = {255,0,255,0},
+		  B = {255,0,0,255},
+		  bresenham:draw_line(Pixmap, P1, P2, R),
+		  bresenham:draw_line(Pixmap, P2, P3, G),
+		  bresenham:draw_line(Pixmap, P3, P1, B)
 	  end, W, H).
     
 
@@ -144,7 +165,13 @@ start(N, Func, W, H) ->
     epx:pixmap_fill(Pix, white),
     epx:pixmap_attach(Pix),
     loop(N, Func, Win, Pix, W, H),
+    recv_loop(N+1, Func, Win, Pix, W, H).
+
+recv_loop(I, Func, Win, Pix, W, H) ->
     receive
+	{epx_event,Win,{button_press,[left],{_X,_Y,_Z}}} ->
+	    exec(Func, Win, Pix, W, H),
+	    recv_loop(I+1, Func, Win, Pix, W, H);
 	{epx_event,Win, close} ->
 	    epx:window_detach(Win),
 	    epx:pixmap_detach(Pix),
@@ -154,10 +181,16 @@ start(N, Func, W, H) ->
 loop(0, _Func, _Win, _Pix, _W, _H) ->
     ok;
 loop(I, Func, Win, Pix, W, H) ->
+    exec(Func, Win, Pix, W, H),
+    loop(I-1, Func, Win, Pix, W, H).
+
+exec(Func, Win, Pix, W, H) ->
+    epx:pixmap_fill(Pix, {255,255,255,255}),
     Func(Pix),
     epx:pixmap_draw(Pix,Win,0,0,0,0,W, H),
-    epx:sync(Pix,Win),
-    loop(I-1, Func, Win, Pix, W, H).
+    epx:sync(Pix,Win).
+    
+    
 
 random_interval(L, H) when L =< H ->
     L + rand:uniform((H - L) + 1) - 1.
@@ -171,13 +204,8 @@ random_color() ->
      rand:uniform(200)+50,
      rand:uniform(200)+50}.
 
-draw_poly3_1(Pixmap,P0,P1,P2,Color) ->
-    barycentric:draw(Pixmap, P0, P1, P2, Color).
-
 draw_poly3_2(Pixmap,P0,P1,P2,_Color) ->
-    bresenham:draw_line(Pixmap, P0, P1, green),
-    bresenham:draw_line(Pixmap, P1, P2, red),
-    bresenham:draw_line(Pixmap, P2, P0, blue),
+
     ok.
 
 mult({X0,Y0},{X1,Y1}) ->  {X0*X1,Y0*Y1};
