@@ -353,9 +353,11 @@ draw(Win,Pix,View,S) ->
     end.
 
 pdraw(Win,Pix,P,S,N) ->
-    if P#view.w == 0; P#view.h == 0 ->
+    io:format("~w/~w: pdraw P=~p\n", 
+	      [self(),erlang:system_info(scheduler_id),P]),
+    if P#view.w =:= 0; P#view.h =:= 0 ->
 	    ok;
-       P#view.w < N; P#view.h < N ->
+       P#view.w =< N; P#view.h =< N ->
 	    draw(Pix, P, S),
 	    epx:pixmap_draw(Pix,Win,
 			    P#view.x,P#view.y,
@@ -373,33 +375,12 @@ pdraw(Win,Pix,P,S,N) ->
 			    P#view.x,P#view.y,
 			    P#view.w,P#view.h),
 	    %% split and update
-	    SELF = self(),
-	    Pids = map(
-		     fun(Pxy) -> 
-			     {spawn(fun() ->
-					    pdraw(Win,Pix,Pxy,S,N), 
-					    SELF ! {self(),ok} 
-				    end),
-			      Pxy}
-		     end, split_view(P)),
-	    wait(Pids, Win, Pix)
+	    parlists:map_opt(
+	      fun(Pxy) -> 
+		      pdraw(Win,Pix,Pxy,S,N)
+	      end, split_view(P), [{bind,true}])
     end.
 	    
-
-wait([],_Win,_Pix) ->
-    ok;
-wait(Pids,Win,Pix) ->
-    receive
-	{Pid,ok} ->
-	    case lists:keysearch(Pid,1,Pids) of
-		false ->
-		    wait(Pids,Win,Pix);
-		{value,E={Pid,_P}} ->
-		    wait(Pids--[E],Win,Pix)
-	    end
-    end.
-
-
 %% divide view in 4 qudrants
 split_view(P) ->
     W1 = P#view.w div 2,
