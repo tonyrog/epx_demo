@@ -19,10 +19,10 @@
 	  name,      %% Pid|Port|registered_name
 	  x,         %% screen x location
 	  y,         %% screen y location
-	  t_start,   %% time when registered
-	  t_in,      %% last swap in time
-	  t_last=0,  %% last cpu time (us)
-	  t_sum=0,   %% cpu time last second (us)
+	  t_start,   %% time when registered (ns)
+	  t_in,      %% last swap in time (ns)
+	  t_last=0,  %% last cpu time (ns)
+	  t_sum=0,   %% cpu time last second (ns)
 	  h_size=0,  %% last known heap size
 	  h_max=0    %% max heap size since last refresh
 	 }).
@@ -84,7 +84,8 @@ init(W, H) ->
 		ptab = ets:new(eproc, [public, set, {keypos,#p.id}]),
 		ctab = ets:new(eproc, [public, set, {keypos,#c.id}])
 	       },
-    erlang:trace(existing, true, [timestamp, running, procs, ports, exiting, 
+    erlang:trace(existing, true, [monotonic_timestamp, 
+				  running, procs, ports, exiting, 
 				  garbage_collection, send, set_on_spawn]),
 
     %% insert all processes
@@ -482,8 +483,9 @@ new_p(W, Pid) when is_pid(Pid) ->
 	    undefined;
 	{heap_size,Sz} ->
 	    {X,Y} = random_point(W),
-	    Now = erlang:system_time(micro_seconds),
+	    Now = erlang:monotonic_time(nanosecond),
 	    Name = case process_info(Pid, registered_name) of
+		       undefined -> pid_to_list(Pid); %% process died
 		       [] -> pid_to_list(Pid);
 		       {registered_name,Nm} -> atom_to_list(Nm)
 		   end,
@@ -493,7 +495,7 @@ new_p(W, Pid) when is_pid(Pid) ->
     end;
 new_p(W, Port) when is_port(Port) ->
     {X,Y} = random_point(W),
-    Now = erlang:system_time(micro_seconds),
+    Now = erlang:monotonic_time(nanosecond),
     Name = case erlang:port_info(Port, registered_name) of
 	       [] -> erlang:port_to_list(Port);
 	       {registered_name, Nm} -> atom_to_list(Nm)
