@@ -1169,7 +1169,7 @@ plot(S,F,Color) ->
 	    plota(S,F,Color);
        true ->
 	    {X,Y} = coord(F),
-	    epixmap:put_pixel(S#s.pix,X,Y,[blend],Color)
+	    epixmap:put_pixel(S#s.pix,X,Y,Color,[blend])
     end.
 
 plota(S,F,Color) ->
@@ -1177,7 +1177,7 @@ plota(S,F,Color) ->
     {Sx,Sy} = alias(F),
     Pix = S#s.pix,
     if Sx==0, Sy==0 ->
-	    epixmap:put_pixel(S#s.pix,X,Y,[blend],Color);
+	    epixmap:put_pixel(S#s.pix,X,Y,Color,[blend]);
        true ->
 	    Fx = if F#line.axis == ?AXIS_XY ->
 			 F#line.f - F#line.df - F#line.dx;
@@ -1206,7 +1206,7 @@ plota(S,F,Color) ->
 
 plotaa(Pix,X,Y,{R,G,B},A) when A >= 0, A =< 255 ->
     ColorA = {A,R,G,B},
-    epixmap:put_pixel(Pix,X,Y,[blend],ColorA).
+    epixmap:put_pixel(Pix,X,Y,ColorA,[blend]).
 
 
 
