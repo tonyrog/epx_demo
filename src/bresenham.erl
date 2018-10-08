@@ -8,6 +8,7 @@
 -module(bresenham).
 
 -export([draw_line/4]).
+-export([draw_triangle/5]).
 -export([test_sort_2/0, test_sort_3/0]).
 
 draw_line(Pixmap,{X0,Y0},{X1,Y1},Color) ->
@@ -43,12 +44,110 @@ drawx_(Pixmap,X,Xi,X1,Y,D,Dx,Dy,Color) ->
 	    drawx_(Pixmap,X+Xi,Xi,X1,Y,D+2*Dy,Dx,Dy,Color)
     end.
 
+draw_triangle(Pixmap, {X0,Y0}, {X1,Y1}, {X2,Y2}, Color) ->
+    draw_triangle(Pixmap, {X0,Y0,1.0}, {X1,Y1,1.0}, {X2,Y2,1.0}, Color);
 draw_triangle(Pixmap, P0, P1, P2, Color) ->
-    {Q0,Q01,Q02} = sort_y(P0,P1,P2),
-    {Q1,Q2} = sort_x(Q01,Q02),
-    %% left edge is Q0-Q1 right edge is Q0-Q2
-    ok.
+    {Q00,Q01,Q02} = sort_y(P0,P1,P2),
+    epx_gc:set_foreground_color(Color),
+    if element(2,Q00) =:= element(2,Q01) ->
+	    if element(2,Q00) =:= element(2,Q02) ->
+		    %% degenerate triangel just a line 
+		    ok;
+	       true ->  %% Q0.y == Q1.y < Q2.y
+		    {Q0,Q1} = sort_x(Q00,Q01),
+		    L01 = line_init(Q0, Q02),
+		    L02 = line_init(Q1, Q02),
+		    fill_steps(Pixmap, L01, L02)
+	    end;
+       true -> %% Q0.y < (Q1.y and Q2.y)
+	    Q0 = Q00,
+	    {Q1,Q2} = sort_x(Q01,Q02),
+	    %% draw along left edge E1=Q0-Q1 to right edge E2=Q0-Q2 until 
+	    %% if E1 termiante before E2 then set E1=Q1-Q2 or if
+	    %% E2 terminates first then E2=Q2-Q1
+	    if  element(2,Q1) =:= element(2,Q2) ->  %% top triangle
+		    L01 = line_init(Q0, Q1),
+		    L02 = line_init(Q0, Q2),
+		    fill_steps(Pixmap, L01, L02);  %% fixme draw border last
+		true ->
+		    L01 = line_init(Q0, Q1),
+		    L02 = line_init(Q0, Q2),
+		    {L11,L12} = fill_steps(Pixmap, L01, L02),
+		    fill_steps(Pixmap, L11, L12)
+	    end
+    end.
 
+fill_steps(Pixmap, E1, E2) ->
+    io:format("line: ~w - ~w\n", [line_cur(E1), line_cur(E2)]),
+    epx:draw_line(Pixmap, line_cur(E1), line_cur(E2)),
+    case line_ystep(Pixmap,E1) of
+	{eol,P1} ->
+	    {line_init(P1, line_end(E2)), E2};
+	E11 ->
+	    plot_border(Pixmap,E11),
+	    case line_ystep(Pixmap,E2) of
+		{eol,P2} ->
+		    {E1, line_init(P2,line_end(E1))};
+		E22 ->
+		    plot_border(Pixmap,E22),
+		    fill_steps(Pixmap, E11, E22)
+	    end
+    end.
+
+plot_border(Pixmap,{_,X,Y,_X1,_Y1,Xi,_D,_D0,_D1}) ->
+    epx:pixmap_put_pixel(Pixmap, X+Xi, Y, black).
+
+line_init({X0,Y0,_},{X1,Y1,_}) ->
+    line_init_(trunc(X0),trunc(Y0),trunc(X1),trunc(Y1));
+line_init({X0,Y0},{X1,Y1}) -> 
+    line_init_(trunc(X0),trunc(Y0),trunc(X1),trunc(Y1)).
+
+line_init_(X0,Y0,X1,Y1) ->
+    Dx0 = X1-X0,
+    Dy  = Y1-Y0,
+    Dx  = abs(Dx0),
+    Xi  = sign(Dx0),
+    if Dx > Dy ->
+	    {x,X0,Y0,X1,Y1,Xi,2*Dy-Dx,-2*(Dx-Dy),2*Dy};
+       true ->
+	    {y,X0,Y0,X1,Y1,Xi,2*Dx-Dy,-2*(Dy-Dx),2*Dx}
+    end.
+
+line_ystep(Pixmap,E) ->
+    case line_step(E) of
+	{eol,XY} -> {eol,XY};
+	{ystep, E1} -> line_xstep(Pixmap,E1);  %% move x as far as possible
+	{xstep, E1} -> %% only x moved 
+	    plot_border(Pixmap,E),
+	    line_ystep(Pixmap,E1);
+	{xystep,E1} -> E1
+    end.
+
+%% move as far as possible on x-axis without moving y-axis
+line_xstep(Pixmap,E) ->
+    case line_step(E) of
+	{eol,_XY} -> E;
+	{xstep,E1} -> 
+	    plot_border(Pixmap,E),
+	    line_xstep(Pixmap,E1);
+	{xystep,_} -> E;
+	{ystep,_} -> E
+    end.
+
+line_cur({_,X,Y,_X1,_Y1,_Xi,_D,_D0,_D1}) -> {X,Y}.
+line_end({_,_X,_Y,X1,Y1,_Xi,_D,_D0,_D1}) -> {X1,Y1}.
+
+line_step({x,X,Y,X1,Y1,Xi,D,D0,D1}) ->
+    if Xi > 0, X >= X1 -> {eol,{X1,Y1}};
+       Xi < 0, X =< X1 -> {eol,{X1,Y1}};
+       D > 0 -> {xystep,{x,X+Xi,Y+1,X1,Y1,Xi,D+D0,D0,D1}};
+       true  -> {xstep, {x,X+Xi,Y,   X1,Y1,Xi,D+D1,D0,D1}}
+    end;
+line_step({y,X,Y,X1,Y1,Xi,D,D0,D1}) ->
+    if Y >= Y1 -> {eol,{X1,Y1}};
+       D > 0   -> {xystep,{y,X+Xi,Y+1,X1,Y1,Xi,D+D0,D0,D1}};
+       true    -> {ystep, {y,X,   Y+1,X1,Y1,Xi,D+D1,D0,D1}}
+    end.
 
 sign(X) when X < 0 -> -1;
 sign(X) when X > 0 -> 1;
