@@ -54,6 +54,8 @@
 -define(TIME_HEIGHT_OFFS, 4). %% offset
 -define(TIME_HEIGHT,     10).
 
+-define(TIME_STEP, 10000).    %% step is 10us
+
 -include_lib("epx/include/epx.hrl").
 
 -record(emon,
@@ -65,7 +67,7 @@
 	  width,        %% window width
 	  height,       %% window height
 	  view,         %% view rectangle
-	  scale=1.0,    %% scale factor
+	  scale=0,      %% scale factor 2^(scale)
 	  pi=0,         %% process index of "top" process
 	  t0,           %% first time stamp
 	  t1,           %% last time stamp
@@ -242,13 +244,7 @@ init(Spec, Opts) ->
 	{'DOWN',Ref,_, _, _} ->
 	    draw(Em)
     end.
-%%
-%% Scale=0.25 => 1 pixel is 4 us    (25%)
-%% Scale=0.5 => 1 pixel is 2 us     (50%)
-%% Scale=1 means 1 pixel is 1 us    (100%)
-%% Scale=2 means 2 pixels are 1 us  (200%)
-%% Scale=4 means 4 pixels are 1 us  (200%)
-%% 
+
 draw(Em) ->
     update_names(Em),
     epx:start(),
@@ -256,14 +252,14 @@ draw(Em) ->
     T1 = ets:last(Em#emon.etab),
     Td0 = find_trigger_time(Em, T0),
     Em1 = window(Em, ?WIN_WIDTH, ?WIN_HEIGHT),
-    Em2  = Em1#emon { scale=1.0, td0=Td0, t0=T0, t1=T1, pi=0 },
+    Em2  = Em1#emon { scale=0, td0=Td0, t0=T0, t1=T1, pi=0 },
     Em3 = redraw(Em2),
     window_loop(Em3).
 
 find_trigger_time(Em,T0) ->
     case ets:match(Em#emon.etab, {'$1','$2',trigger}) of
 	[[Td0,_]|_] ->
-	    Td0 + 100;
+	    Td0 + 10*?TIME_STEP;
 	[] ->
 	    T0
     end.
@@ -298,7 +294,7 @@ redraw(Em) ->
     T0 = Em#emon.td0,
     T1 = ets:next(Em#emon.etab, Em#emon.td0),
     X1 = X0+Width-1,
-    Em1 = draw_ts(Em,T0,T1,X0,X1),
+    Em1 = draw_ts(Em,T0,T1,math:pow(2,Em#emon.scale),X0,X1),
 
     %% draw buffer scale at the bottom
     draw_buffer_scale(Em1),
@@ -310,23 +306,23 @@ redraw(Em) ->
 %%
 %% Draw events in region X0 - X1 => T0 - T1
 %%
-draw_ts(Em,T,'$end_of_table',_X,_X1) ->
+draw_ts(Em,T,'$end_of_table',Scale,_X,_X1) ->
     Em#emon{ td1=T };
-draw_ts(Em,T,Ti,X,X1) when X < X1 ->
+draw_ts(Em,T,Ti,Scale,X,X1) when X < X1 ->
     case ets:lookup(Em#emon.etab,Ti) of
 	[{_Ti,Pid,Evt}] ->
-	    Xn = X + (Ti-T),
+	    Xn = X + trunc(((Ti-T)*Scale)/1000),
 	    if Xn < X1 ->
 		    draw_ps(Em,Em#emon.pi,Pid,Evt,X,Xn),
-		    draw_ts(Em,Ti,ets:next(Em#emon.etab,Ti),Xn,X1);
+		    draw_ts(Em,Ti,ets:next(Em#emon.etab,Ti),Scale,Xn,X1);
 	       true ->
 		    draw_ps(Em,Em#emon.pi,undefined,undefined,X,X1),
 		    Em#emon{ td1=T+(X1-X) }
 	    end;
 	[] ->
-	    draw_ts(Em,T,ets:next(Em#emon.etab,Ti),X,X1)
+	    draw_ts(Em,T,ets:next(Em#emon.etab,Ti),Scale,X,X1)
     end;
-draw_ts(Em,T,_Ti,_X,_X1) ->
+draw_ts(Em,T,_Ti,_Scale,_X,_X1) ->
     Em#emon{ td1=T }.
 
 
@@ -671,7 +667,6 @@ buffer_time_xy(Em, X, Y) ->
 	    false
     end.
     
-
 find_ps_pid(Pid, Ps0,Ps1) ->
     case lists:keysearch(Pid, 1, Ps0) of
 	V={value,_PE} ->
@@ -679,7 +674,6 @@ find_ps_pid(Pid, Ps0,Ps1) ->
 	false ->
 	    lists:keysearch(Pid, 1, Ps1)
     end.
-    
 
 window(Em, W, H) ->
     E = [key_press,key_release, button_press, button_release,
@@ -691,7 +685,6 @@ window(Em, W, H) ->
     Em0 = Em#emon { win=Win, font=Font,
 		    ascent=FInfo#epx_font_info.ascent},
     configure(Em0, W, H).
-
 
 configure(Em, W0, H0) ->
     W = max(?MIN_WIDTH, W0),
@@ -709,7 +702,6 @@ configure(Em, W0, H0) ->
     Em#emon { view={V_X,V_Y,V_W,V_H}, 
 	      pix = Pix, width = W, height = H }.
     
-
 window_loop(Em) ->
     Win = Em#emon.win,
     receive
@@ -718,28 +710,27 @@ window_loop(Em) ->
 	{epx_event,Win, close} ->
 	    epx:window_detach(Win),
 	    ok;
-	{epx_event,Win,{resize, {W,H,_D}}} ->
-	    if W =:= Em#emon.width, H =:= Em#emon.height ->
-		    window_loop(Em);
-	       true ->
-		    %% io:format("RESIZE: ~w ~w\n", [W, H]),
-		    Em1 = configure(Em, W, H),
-		    Em2 = redraw(Em1),
-		    window_loop(Em2)
-	    end;
+	{epx_event,Win,{key_press,up,_,_}} ->
+	    Em2 = redraw(Em#emon { scale = min(4, Em#emon.scale + 1)}),
+	    window_loop(Em2);
+	{epx_event,Win,{key_press,down,_,_}} ->
+	    Em2 = redraw(Em#emon { scale = max(-4, Em#emon.scale - 1)}),
+	    window_loop(Em2);
 	{epx_event,Win,{key_press,left,_,_}} ->
 	    %% auto-repeat for mac os x ?
-	    Td0 = erlang:max(Em#emon.t0, Em#emon.td0 - 10),
+	    Scale = math:pow(2,Em#emon.scale),
+	    Td0 = erlang:max(Em#emon.t0, Em#emon.td0 - trunc(?TIME_STEP*Scale)),
 	    Em1 = Em#emon { td0 = Td0},
 	    Em2 = redraw(Em1),
 	    window_loop(Em2);
 	{epx_event,Win,{key_press,right,_,_}} ->
 	    %% auto-repeat for mac os x ?
-	    T = Em#emon.td1 + 10,
-	    Td0 = if T >= Em#emon.t1 -> 
+	    Scale = math:pow(2,Em#emon.scale),
+	    T = Em#emon.td1 + trunc(?TIME_STEP*Scale),
+	    Td0 = if T >= Em#emon.t1 ->
 			  Em#emon.td0 + (Em#emon.t1 - Em#emon.td1);
 		     true ->
-			  Em#emon.td0 + 10
+			  Em#emon.td0 + trunc(?TIME_STEP*Scale)
 		  end,
 	    Em1 = Em#emon { td0 = Td0},
 	    Em2 = redraw(Em1),
@@ -766,6 +757,26 @@ window_loop(Em) ->
 	    end;
 	{epx_event,Win,{button_release,[left],_}} ->
 	    window_loop(Em);
+
+	{epx_event,Win,{resize, {W,H,_D}}} ->
+	    if W =:= Em#emon.width, H =:= Em#emon.height ->
+		    window_loop(Em);
+	       true ->
+		    io:format("RESIZE ~w,~w\n", [W,H]),
+		    Em1 = configure(Em, W, H),
+		    Em2 = redraw(Em1),
+		    window_loop(Em2)
+	    end;
+	{epx_event,Win,{configure,{X,Y,W,H}}} ->
+	    if W =:= Em#emon.width, H =:= Em#emon.height ->
+		    window_loop(Em);
+	       true ->
+		    io:format("CONFIGURE SIZE ~w,~w\n", [W,H]),
+		    Em1 = configure(Em, W, H),
+		    Em2 = redraw(Em1),
+		    window_loop(Em2)
+	    end;
+
 	_Other ->
 	    io:format("EVENT: ~p\n", [_Other]),
 	    window_loop(Em)
@@ -784,7 +795,7 @@ collect(Spec, Em, Opts) ->
     Flags = filter_flags(getopt(flags, Opts) ++ getopt(add,Opts)) --
 	getopt(delete, Opts),
     What = run(Spec),
-    erlang:trace(What, true, [timestamp, running | Flags]),
+    erlang:trace(What, true, [monotonic_timestamp, running | Flags]),
     PreBuffer = getopt(prebuffer, Opts),
     Buf0 = evt_buffer:new(PreBuffer),
     %% Wait for Delay ms before checking for trigger
@@ -804,6 +815,9 @@ filter_flags([Flag|Fs],Ac) ->
     case Flag of
 	running -> filter_flags(Fs,Ac);   %% always added
 	timestamp -> filter_flags(Fs,Ac);   %% always added
+	monotonic_timestamp -> filter_flags(Fs,Ac);   %% always added
+	strict_monotonic_timestamp -> filter_flags(Fs,Ac);   %% always added
+	cpu_timestamp -> filter_flags(Fs,Ac);   %% always added
 	set_on_spawn -> filter_flags(Fs,[Flag|Ac]);
 	set_on_link  -> filter_flags(Fs,[Flag|Ac]);
 	set_on_first_spawn -> filter_flags(Fs,[Flag|Ac]);
@@ -830,7 +844,7 @@ run(What) -> What.
 %%
 delay_loop(Timer,Buf) ->
     receive
-	Ts when is_tuple(Ts), element(1,Ts) == trace_ts ->
+	Ts when is_tuple(Ts), element(1,Ts) =:= trace_ts ->
 	    case internal_ts(Ts) of
 		undefined ->
 		    delay_loop(Timer,Buf);
@@ -862,7 +876,7 @@ trigger_loop(Fun,Arg,Em,Timer,Buf) ->
 		    end
 	    end;
 	{timeout,Timer,_} ->
-	    add_event(Em,{erlang:system_time(micro_seconds),self(),trigger}),
+	    add_event(Em,{erlang:monotonic_time(nanosecond),self(),trigger}),
 	    add_buffer_events(Em,Buf)
     end.
 
@@ -888,7 +902,7 @@ cancel(Ref) ->
 %%
 collect_loop(Timer,Em) ->
     receive
-	Ts when is_tuple(Ts), element(1,Ts) == trace_ts ->
+	Ts when is_tuple(Ts), element(1,Ts) =:= trace_ts ->
 	    Evt = internal_ts(Ts),
 	    add_event(Em,Evt),
 	    collect_loop(Timer,Em);
@@ -910,6 +924,10 @@ internal_ts({trace_ts,ID,out,_,T}) -> {T,ID,out};
 %% garbage_collection
 internal_ts({trace_ts,ID,gc_start,_Info,T}) ->{T,ID,gc_start};
 internal_ts({trace_ts,ID,gc_end,_Info,T}) -> {T,ID,gc_end};
+internal_ts({trace_ts,ID,gc_minor_start,_Info,T}) ->{T,ID,gc_start};
+internal_ts({trace_ts,ID,gc_minor_end,_Info,T}) -> {T,ID,gc_end};
+internal_ts({trace_ts,ID,gc_major_start,_Info,T}) ->{T,ID,gc_start};
+internal_ts({trace_ts,ID,gc_major_end,_Info,T}) -> {T,ID,gc_end};
 %% send
 internal_ts({trace_ts,ID,send,_Msg,DST,T}) -> {T,ID,{send,DST}};
 internal_ts({trace_ts,ID,send_to_non_existing,_Msg,DST,T}) -> {T,ID,{send,DST}};
