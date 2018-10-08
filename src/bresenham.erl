@@ -9,6 +9,7 @@
 
 -export([draw_line/4]).
 -export([draw_triangle/5]).
+-export([draw_bary_triangle/5]).
 -export([test_sort_2/0, test_sort_3/0]).
 
 draw_line(Pixmap,{X0,Y0},{X1,Y1},Color) ->
@@ -93,6 +94,58 @@ fill_steps(Pixmap, E1, E2) ->
 		    fill_steps(Pixmap, E11, E22)
 	    end
     end.
+
+
+draw_bary_triangle(Pixmap, {X0,Y0}, {X1,Y1}, {X2,Y2}, Color) ->
+    draw_bary_triangle(Pixmap, {X0,Y0,1.0}, {X1,Y1,1.0}, {X2,Y2,1.0}, Color);
+draw_bary_triangle(Pixmap, P0, P1, P2, Color) ->
+    {Q00,Q01,Q02} = sort_y(P0,P1,P2),
+    epx_gc:set_foreground_color(Color),
+    if element(2,Q00) =:= element(2,Q01) ->
+	    if element(2,Q00) =:= element(2,Q02) ->
+		    %% degenerate triangel just a line 
+		    ok;
+	       true ->  %% Q0.y == Q1.y < Q2.y
+		    {Q0,Q1} = sort_x(Q00,Q01),
+		    L01 = line_init(Q0, Q02),
+		    L02 = line_init(Q1, Q02),
+		    fill_bary_steps(Pixmap,L01,L02,P0,P1,P2,Color)
+	    end;
+       true -> %% Q0.y < (Q1.y and Q2.y)
+	    Q0 = Q00,
+	    {Q1,Q2} = sort_x(Q01,Q02),
+	    %% draw along left edge E1=Q0-Q1 to right edge E2=Q0-Q2 until 
+	    %% if E1 termiante before E2 then set E1=Q1-Q2 or if
+	    %% E2 terminates first then E2=Q2-Q1
+	    if  element(2,Q1) =:= element(2,Q2) ->  %% top triangle
+		    L01 = line_init(Q0, Q1),
+		    L02 = line_init(Q0, Q2),
+		    fill_bary_steps(Pixmap,L01,L02,P0,P1,P2,Color);
+		true ->
+		    L01 = line_init(Q0, Q1),
+		    L02 = line_init(Q0, Q2),
+		    {L11,L12} = fill_bary_steps(Pixmap,L01,L02,P0,P1,P2,Color),
+		    fill_bary_steps(Pixmap,L11,L12,P0,P1,P2,Color)
+	    end
+    end.
+
+fill_bary_steps(Pixmap,E1,E2,P0,P1,P2,Color) ->
+    io:format("line: ~w - ~w\n", [line_cur(E1), line_cur(E2)]),
+    barycentric:draw_triangle_line(Pixmap,line_cur(E1),P0,P1,P2,Color),
+    case line_ystep(Pixmap,E1) of
+	{eol,Q1} ->
+	    {line_init(Q1, line_end(E2)), E2};
+	E11 ->
+	    plot_border(Pixmap,E11),
+	    case line_ystep(Pixmap,E2) of
+		{eol,Q2} ->
+		    {E1, line_init(Q2,line_end(E1))};
+		E22 ->
+		    plot_border(Pixmap,E22),
+		    fill_bary_steps(Pixmap,E11,E22,P0,P1,P2,Color)
+	    end
+    end.
+
 
 plot_border(Pixmap,{_,X,Y,_X1,_Y1,Xi,_D,_D0,_D1}) ->
     epx:pixmap_put_pixel(Pixmap, X+Xi, Y, black).

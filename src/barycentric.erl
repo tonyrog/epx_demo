@@ -4,6 +4,7 @@
 -module(barycentric).
 
 -export([draw_triangle/5]).
+-export([draw_triangle_line/6]).
 
 %% v1 = p2 - p1;
 %% v2 = p3 - p1;
@@ -38,14 +39,27 @@
 	 color,
 	 k
 	}).
+
+-define(SCALE, 1).
+
+-define(PUT_PIXEL(Pixmap,X,Y,Color),
+	if ?SCALE =:= 1 ->
+		epx:pixmap_put_pixel((Pixmap),(X),(Y),(Color),[blend]);
+	   true ->
+		epx:pixmap_fill_area((Pixmap),?SCALE*(X),?SCALE*(Y),
+				     ?SCALE,?SCALE,(Color),[blend])
+	end).
+
 %%
 %% We should be able to run several triangles at one!!!
 %% possibly using simd vector operations
 
 draw_triangle(Pixmap,{X0,Y0},{X1,Y1},{X2,Y2},Color) ->
     draw_triangle(Pixmap,{X0,Y0,1.0},{X1,Y1,1.0},{X2,Y2,1.0},Color);
-draw_triangle(Pixmap,P0={X0,Y0,_},P1={X1,Y1,_},P2={X2,Y2,_},Color) ->
-    %% Time0 = erlang:monotonic_time(),
+draw_triangle(Pixmap,P0,P1,P2,Color) ->
+    {X0,Y0,_} = point_3d(?SCALE, P0),
+    {X1,Y1,_} = point_3d(?SCALE, P1),
+    {X2,Y2,_} = point_3d(?SCALE, P2),
     Xl = min(X0,X1,X2),
     Xr = max(X0,X1,X2),
     Yu = min(Y0,Y1,Y2),
@@ -58,79 +72,101 @@ draw_triangle(Pixmap,P0={X0,Y0,_},P1={X1,Y1,_},P2={X2,Y2,_},Color) ->
     S0 = (Qx*V2y - Qy*V2x),
     T0 = (V1x*Qy - V1y*Qx),
     Tri = #triangle{ p0=P0, p1=P1, p2=P2, color=Color, k=K },
-    scan_y(trunc(Yu),trunc(Yd),S0,T0,
-	   trunc(Xl),trunc(Xr),P0,V1,V2,K,Pixmap,Tri).
-    %% Time1 = erlang:monotonic_time(),
-    %% Time = erlang:convert_time_unit(Time1-Time0, native, microsecond),
-    %% io:format("time = ~wus\n", [Time]).
+    scan_y(Pixmap,trunc(Yu),trunc(Yd),S0,T0,trunc(Xl),trunc(Xr),V1,V2,K,Tri).
 
-scan_y(Y,Yd,S0,T0,Xl,Xr,P0={_X0,_Y0,_},V1={V1x,V1y},V2={V2x,V2y},K,Pixmap,Tri) ->
+%% do one line only in the barycentric algorithm
+draw_triangle_line(Pixmap,P,P0,P1,P2,Color) ->
+    {X,Y,_}   = point_3d(?SCALE, P),
+    {X0,Y0,_} = point_3d(?SCALE, P0),
+    {X1,Y1,_} = point_3d(?SCALE, P1),
+    {X2,Y2,_} = point_3d(?SCALE, P2),
+    Yu = trunc(min(Y0,Y1,Y2)),
+    Yd = trunc(max(Y0,Y1,Y2)),
+    Xl = trunc(min(X0,X1,X2)),
+    Xr = trunc(max(X0,X1,X2)),
+    if Y < Yu; Y > Yd -> ok;
+       X < Xl; X > Xr -> ok;
+       true ->
+	    V1 = {V1x=(X1-X0), V1y=(Y1-Y0)},
+	    V2 = {V2x=(X2-X0), V2y=(Y2-Y0)},
+	    K = cross(V1,V2),
+	    Qx = X - X0,
+	    Qy = Y - Y0,
+	    S0 = (Qx*V2y - Qy*V2x),
+	    T0 = (V1x*Qy - V1y*Qx),
+	    Tri = #triangle{ p0=P0, p1=P1, p2=P2, color=Color, k=K },
+	    if K > 0 ->
+		    scan_x_kgto(Pixmap,X,Xr,Y,K,S0,V2y,T0,-V1y,Tri);
+	       true ->
+		    scan_x_klto(Pixmap,X,Xr,Y,K,S0,V2y,T0,-V1y,Tri)
+	    end
+    end.
+
+scan_y(Pixmap,Y,Yd,S0,T0,Xl,Xr,V1={V1x,V1y},V2={V2x,V2y},K,Tri) ->
     if Y > Yd ->
 	    ok;
        true ->
-	    S01 = S0 - V2x,
-	    T01 = T0 + V1x,
 	    if K > 0 ->
-		    scan_x_kgto(Xl,Xr,0,Y,K,S01,V2y,T01,-V1y,Pixmap,Tri);
+		    scan_x_kgto(Pixmap,Xl,Xr,Y,K,S0,V2y,T0,-V1y,Tri);
 	       true ->
-		    scan_x_klto(Xl,Xr,0,Y,K,S01,V2y,T01,-V1y,Pixmap,Tri)
+		    scan_x_klto(Pixmap,Xl,Xr,Y,K,S0,V2y,T0,-V1y,Tri)
 	    end,
-	    scan_y(Y+1,Yd,S01,T01,Xl,Xr,P0,V1,V2,K,Pixmap,Tri)
+	    scan_y(Pixmap,Y+1,Yd,S0-V2x,T0+V1x,Xl,Xr,V1,V2,K,Tri)
     end.
 
 %% outside
-scan_x_kgto(X,Xr,I,Y,K,S,Si,T,Tj,Pixmap,Tri) ->
+scan_x_kgto(Pixmap,X,Xr,Y,K,S,Si,T,Tj,Tri) ->
     if X > Xr -> ok;
        S<0; T<0; T+S>K ->
-	    scan_x_kgto(X+1,Xr,I+1,Y,K,S+Si,Si,T+Tj,Tj,Pixmap,Tri);
+	    scan_x_kgto(Pixmap,X+1,Xr,Y,K,S+Si,Si,T+Tj,Tj,Tri);
        true -> %% inside
-	    io:format("Y:~w,K>0:X:~w - ", [Y,X]),
-	    scan_x_kgti(X,Xr,I,Y,K,S,Si,T,Tj,Pixmap,Tri)
+	    %% io:format("Y:~w,K>0:X:~w - ", [Y,X]),
+	    scan_x_kgti(Pixmap,X,Xr,Y,K,S,Si,T,Tj,Tri)
     end.
 
-scan_x_kgti(X,Xr,I,Y,K,S,Si,T,Tj,Pixmap,Tri) ->
+scan_x_kgti(Pixmap,X,Xr,Y,K,S,Si,T,Tj,Tri) ->
     if X > Xr -> 
-	    io:format("x=~w (out)\n", [X]),
+	    %% io:format("x=~w (out)\n", [X]),
 	    ok;
        S>=0, T>=0, T+S=<K ->
 	    plot(Pixmap,X,Y,S,T,K,Tri),
-	    scan_x_kgti(X+1,Xr,I+1,Y,K,S+Si,Si,T+Tj,Tj,Pixmap,Tri);
+	    scan_x_kgti(Pixmap,X+1,Xr,Y,K,S+Si,Si,T+Tj,Tj,Tri);
        true ->
 	    %% fixme: plot antialiased last point
-	    io:format("x=~w\n", [X]),
+	    %% io:format("x=~w\n", [X]),
 	    ok
     end.
 
-scan_x_klto(X,Xr,I,Y,K,S,Si,T,Tj,Pixmap,Tri) ->
+scan_x_klto(Pixmap,X,Xr,Y,K,S,Si,T,Tj,Tri) ->
     if  X > Xr -> ok;
 	S>=0; T>=0; T+S=<K ->
-	    scan_x_klto(X+1,Xr,I+1,Y,K,S+Si,Si,T+Tj,Tj,Pixmap,Tri);
+	    scan_x_klto(Pixmap,X+1,Xr,Y,K,S+Si,Si,T+Tj,Tj,Tri);
 	true ->
-	    io:format("Y:~w,K<0:X:~w - ", [Y,X]),
-	    scan_x_klti(X,Xr,I,Y,K,S,Si,T,Tj,Pixmap,Tri)
+	    %% io:format("Y:~w,K<0:X:~w - ", [Y,X]),
+	    scan_x_klti(Pixmap,X,Xr,Y,K,S,Si,T,Tj,Tri)
     end.
 
-scan_x_klti(X,Xr,I,Y,K,S,Si,T,Tj,Pixmap,Tri) ->
+scan_x_klti(Pixmap,X,Xr,Y,K,S,Si,T,Tj,Tri) ->
     if  X > Xr -> 
-	    io:format("x=~w (out)\n", [X]),
+	    %% io:format("x=~w (out)\n", [X]),
 	    ok;
 	S<0, T<0, T+S>K ->
 	    plot(Pixmap,X,Y,S,T,K,Tri),
-	    scan_x_klti(X+1,Xr,I+1,Y,K,S+Si,Si,T+Tj,Tj,Pixmap,Tri);
+	    scan_x_klti(Pixmap,X+1,Xr,Y,K,S+Si,Si,T+Tj,Tj,Tri);
 	true ->
-	    io:format("x=~w\n", [X]),
+	    %% io:format("x=~w\n", [X]),
 	    ok	    
     end.
 
-
 plot_0(Pixmap,X,Y,_S,_T,_K,Tri) ->
-    epx:pixmap_put_pixel(Pixmap,X,Y,Tri).
+    Color = Tri#triangle.color,
+    ?PUT_PIXEL(Pixmap,X,Y,Color).
 
 plot(Pixmap,X,Y,S0,T0,K,_Tri) ->
     C0 = {1,0,0}, C1 = {0,1,0}, C2 = {0,0,1},
     S = S0/K, T = T0/K,
-    Color1 = add(add(mult(1-(S+T),C0),mult(S,C1)),mult(T,C2)),
-    epx:pixmap_put_pixel(Pixmap,X,Y,rgb8(Color1)).
+    Color1 = rgb8(add(add(mult(1-(S+T),C0),mult(S,C1)),mult(T,C2))),
+    ?PUT_PIXEL(Pixmap,X,Y,Color1).
 
 plot_2(Pixmap,X,Y,S0,T0,K,Tri) ->
     {_,_,P0z} = Tri#triangle.p0,
@@ -141,13 +177,16 @@ plot_2(Pixmap,X,Y,S0,T0,K,Tri) ->
     MinZ = min(P0z,P1z,P2z),
     MaxZ = max(P0z,P1z,P2z),
     G = (Z-MinZ) / (MaxZ-MinZ),
-    Color1 = {G,G,G},
-    epx:pixmap_put_pixel(Pixmap,X,Y,rgb8(Color1)).
+    Color1 = rgb8({G,G,G}),
+    ?PUT_PIXEL(Pixmap,X,Y,Color1).
 
 cross({X0,Y0},{X1,Y1}) -> X0*Y1 - Y0*X1.
 
 max(A,B,C) -> max(C,max(A,B)).
 min(A,B,C) -> min(C,min(A,B)).
+
+point_3d(Scale,{X,Y}) -> mult(Scale,{X,Y,1.0});
+point_3d(Scale,P={_X,_Y,_Z}) -> mult(Scale,P).
 
 mult({X0,Y0},{X1,Y1}) ->  {X0*X1,Y0*Y1};
 mult(A,{X1,Y1}) ->  {A*X1,A*Y1};

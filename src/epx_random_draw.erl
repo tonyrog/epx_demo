@@ -48,6 +48,26 @@ draw_triangle_2() ->
 		  bresenham:draw_triangle(Pixmap, P1, P2, P3, Color)
 	  end, W, H).
 
+draw_triangle_3() ->
+    W = 640,
+    H = 480,
+    start(1,
+	  fun(Pixmap) ->
+		  Color = {127,255,0,0},
+		  A = case get(angle) of
+			  undefined -> 0;
+			  A0 -> A0 + 10
+		      end,
+		  put(angle, A),
+		  Xc = 640 div 2,
+		  Yc = 480 div 2,
+		  R  = 50,
+		  P1 = {Xc+50*cos(A),    Yc+50*sin(A)},
+		  P2 = {Xc+50*cos(A+120),Yc+50*sin(A+120)},
+		  P3 = {Xc+50*cos(A+240),Yc+50*sin(A+240)},
+		  bresenham:draw_bary_triangle(Pixmap, P1, P2, P3, Color)
+	  end, W, H).
+
 cos(A) -> math:cos(fmod(A,360) * math:pi()/180).
 sin(A) -> math:sin(fmod(A,360) * math:pi()/180).
 
