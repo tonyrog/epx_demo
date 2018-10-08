@@ -28,6 +28,26 @@ draw_triangle_1() ->
 		  barycentric:draw_triangle(Pixmap, P1, P2, P3, Color)
 	  end, W, H).
 
+draw_triangle_2() ->
+    W = 640,
+    H = 480,
+    start(1,
+	  fun(Pixmap) ->
+		  Color = {127,255,0,0},
+		  A = case get(angle) of
+			  undefined -> 0;
+			  A0 -> A0 + 10
+		      end,
+		  put(angle, A),
+		  Xc = 640 div 2,
+		  Yc = 480 div 2,
+		  R  = 50,
+		  P1 = {Xc+50*cos(A),    Yc+50*sin(A)},
+		  P2 = {Xc+50*cos(A+120),Yc+50*sin(A+120)},
+		  P3 = {Xc+50*cos(A+240),Yc+50*sin(A+240)},
+		  bresenham:draw_triangle(Pixmap, P1, P2, P3, Color)
+	  end, W, H).
+
 cos(A) -> math:cos(fmod(A,360) * math:pi()/180).
 sin(A) -> math:sin(fmod(A,360) * math:pi()/180).
 
@@ -35,20 +55,6 @@ fmod(A,N) ->
     I = trunc(A) div N,
     A - I*N.
 
-draw_triangle_2() ->
-    draw_triangle_2(640,480,{320,10},{120,400},{520,400}).
-
-draw_triangle_2(W,H,P1,P2,P3) ->
-    start(1,
-	  fun(Pixmap) ->
-		  R = {255,255,0,0},
-		  G = {255,0,255,0},
-		  B = {255,0,0,255},
-		  bresenham:draw_line(Pixmap, P1, P2, R),
-		  bresenham:draw_line(Pixmap, P2, P3, G),
-		  bresenham:draw_line(Pixmap, P3, P1, B)
-	  end, W, H).
-    
 
 draw_strip_solid(M) ->
     draw_strip(gen_circle_strip(M), 640, 480, solid).
