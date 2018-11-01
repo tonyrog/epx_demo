@@ -29,7 +29,7 @@
 -define(MIN_WIDTH,  100).
 -define(MIN_HEIGHT, 64).
 
--define(WIN_WIDTH,  640).
+-define(WIN_WIDTH,  800).
 -define(WIN_HEIGHT, 480).
 -define(WIN_BG_COLOR, {0,0,0}).
 %% Buffer view constants
@@ -149,6 +149,9 @@
 %%                   {trace_ts,ID,register,Name,T}
 %%                   {trace_ts,ID,unregister,Name,T}
 %%
+start() ->
+    start(all).
+
 start(Spec) ->
     start_it(Spec,[]).
 
@@ -179,7 +182,7 @@ start_it_now(Spec, Opts) ->
     spawn_link(fun() -> init(Spec,Opts) end).
 
 options() ->
-    [buffer,time,timeout,delay,prebuffer,trigger,init,flags].
+    [buffer,time,timeout,delay,prebuffer,trigger,init,flags,width,height].
 
 default(buffer)      -> ?DEFAULT_BUFFER;
 default(time)        -> ?DEFAULT_TIME;
@@ -191,6 +194,8 @@ default(init)        -> ?DEFAULT_INIT;
 default(flags)       -> ?DEFAULT_FLAGS;
 default(add)         -> [];
 default(delete)      -> [];
+default(width)       -> ?WIN_WIDTH;
+default(height)      -> ?WIN_HEIGHT;
 default(_)           -> undefined.
     
 help() ->
@@ -237,21 +242,23 @@ init(Spec, Opts) ->
     del_id(Em, Collector),
     del_id(Em, self()),
     
+    W = getopt(width,Opts),
+    H = getopt(height,Opts),
 
     Ref = erlang:monitor(process,Collector),
     %% Fixme: draw initial after a short time?
     receive
 	{'DOWN',Ref,_, _, _} ->
-	    draw(Em)
+	    draw(Em,W,H)
     end.
 
-draw(Em) ->
+draw(Em,W,H) ->
     update_names(Em),
     epx:start(),
     T0 = ets:first(Em#emon.etab),
     T1 = ets:last(Em#emon.etab),
     Td0 = find_trigger_time(Em, T0),
-    Em1 = window(Em, ?WIN_WIDTH, ?WIN_HEIGHT),
+    Em1 = window(Em,W,H),
     Em2  = Em1#emon { scale=0, td0=Td0, t0=T0, t1=T1, pi=0 },
     Em3 = redraw(Em2),
     window_loop(Em3).
@@ -295,7 +302,6 @@ redraw(Em) ->
     T1 = ets:next(Em#emon.etab, Em#emon.td0),
     X1 = X0+Width-1,
     Em1 = draw_ts(Em,T0,T1,math:pow(2,Em#emon.scale),X0,X1),
-
     %% draw buffer scale at the bottom
     draw_buffer_scale(Em1),
 
@@ -306,7 +312,7 @@ redraw(Em) ->
 %%
 %% Draw events in region X0 - X1 => T0 - T1
 %%
-draw_ts(Em,T,'$end_of_table',Scale,_X,_X1) ->
+draw_ts(Em,T,'$end_of_table',_Scale,_X,_X1) ->
     Em#emon{ td1=T };
 draw_ts(Em,T,Ti,Scale,X,X1) when X < X1 ->
     case ets:lookup(Em#emon.etab,Ti) of
@@ -675,32 +681,52 @@ find_ps_pid(Pid, Ps0,Ps1) ->
 	    lists:keysearch(Pid, 1, Ps1)
     end.
 
-window(Em, W, H) ->
+window(Em,W,H) ->
     E = [key_press,key_release, button_press, button_release,
-	 resize,configure, motion, left],
+	 resize, motion, left],
     Win = epx:window_create(50, 50, W, H, E),
     epx:window_attach(Win),
+    B = epx_backend:default(),
+    %% epx:backend_adjust(B, [{use_off_screen,0},{use_exposure,1}]),
+    [{width,BW},{height,BH}] = epx:backend_info(B,[width,height]),
+    epx:window_adjust(Win, [{name, "Process Tracer"},
+			    {min_width,W div 2},{max_width,BW},
+			    {min_height,H div 2},{max_height,BH}]),
     {ok,Font} = epx_font:match([{name,"Arial"},{size,10}]),
     FInfo = epx_font:info(Font),
-    Em0 = Em#emon { win=Win, font=Font,
-		    ascent=FInfo#epx_font_info.ascent},
+    Em0 = Em#emon { win=Win, font=Font, ascent=FInfo#epx_font_info.ascent},
     configure(Em0, W, H).
 
 configure(Em, W0, H0) ->
     W = max(?MIN_WIDTH, W0),
     H = max(?MIN_HEIGHT, H0),
-    Pix0 = Em#emon.pix,
-    Pix = epx:pixmap_create(W, H),
-    if  Pix0 =:= undefined -> ok;
-	true -> epx:pixmap_detach(Pix0)
-    end,
-    epx:pixmap_attach(Pix),
+    Pix1 = resize_pixmap(Em#emon.pix, W, H),
     V_X = ?VIEW_LEFT_OFFS,
     V_Y = ?VIEW_TOP_OFFS,
     V_W = W - (V_X + ?VIEW_RIGHT_OFFS),
     V_H = H - (V_Y + ?VIEW_BOTTOM_OFFS),
     Em#emon { view={V_X,V_Y,V_W,V_H}, 
-	      pix = Pix, width = W, height = H }.
+	      pix = Pix1, width = W, height = H }.
+
+resize_pixmap(undefined, W, H) ->
+    Pixmap = next_pixmap(W,H),
+    epx:pixmap_attach(Pixmap),
+    Pixmap;
+resize_pixmap(Pixmap, W, H) ->
+    case epx:pixmap_info(Pixmap,[width,height]) of
+	[{width,PW},{height,PH}] when PW < W; PH < H ->
+	    epx:pixmap_detach(Pixmap),
+	    Pixmap1 = next_pixmap(W,H),
+	    epx:pixmap_attach(Pixmap1),
+	    Pixmap1;
+	_ ->
+	    Pixmap
+    end.
+
+next_pixmap(W,H) ->
+    NPW = 1 bsl ceil(math:log2(W)),
+    NPH = 1 bsl ceil(math:log2(H)),
+    epx:pixmap_create(NPW, NPH).
     
 window_loop(Em) ->
     Win = Em#emon.win,
@@ -762,21 +788,11 @@ window_loop(Em) ->
 	    if W =:= Em#emon.width, H =:= Em#emon.height ->
 		    window_loop(Em);
 	       true ->
-		    io:format("RESIZE ~w,~w\n", [W,H]),
 		    Em1 = configure(Em, W, H),
+		    epx:sync(Win),
 		    Em2 = redraw(Em1),
 		    window_loop(Em2)
 	    end;
-	{epx_event,Win,{configure,{X,Y,W,H}}} ->
-	    if W =:= Em#emon.width, H =:= Em#emon.height ->
-		    window_loop(Em);
-	       true ->
-		    io:format("CONFIGURE SIZE ~w,~w\n", [W,H]),
-		    Em1 = configure(Em, W, H),
-		    Em2 = redraw(Em1),
-		    window_loop(Em2)
-	    end;
-
 	_Other ->
 	    io:format("EVENT: ~p\n", [_Other]),
 	    window_loop(Em)

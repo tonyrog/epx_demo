@@ -118,7 +118,7 @@ plot_points(Pixmap,J,M,Ps,XYs={Xs,Ys},[{A,R,G,B}|Pix]) when J =< M ->
     B1 = min(255,max(0,trunc(B*Az))),
     %% L = min(255,max(0,trunc(255*(Az+0.5)))),
     %% Z = 255,
-    epx:pixmap_put_pixel(Pixmap,X,Y,0,{A1,R1,G1,B1}),
+    epx:pixmap_put_pixel(Pixmap,X,Y,{A1,R1,G1,B1}),
     plot_points(Pixmap,J+1,M,Ps,XYs,Pix);
 plot_points(_Pixmap,_J,_,_Ps,_XYs,[]) ->
     ok.
@@ -169,12 +169,16 @@ rotate(A0,Ux,Uy,Uz) when is_float(Ux), is_float(Uy), is_float(Uz) ->
 start() ->
     start(640, 480, 4096).
 
-start(W, H, N) ->
+start(W, H, _N) ->
     epx:start(),
     Window = epx:window_create(50,50,W,H,[button_press,
 					  button_release,
-					  key_press]),
+					  key_press,resize]),
     epx:window_attach(Window),
+    B = epx_backend:default(),
+    [{width,BW},{height,BH}] = epx:backend_info(B,[width,height]),
+    epx:window_adjust(Window, [{min_width,W div 2},{max_width,2*W},
+			       {min_height,H div 2},{max_height,2*H}]),
     Pixmap = epx:pixmap_create(W,H,argb),
     epx:pixmap_fill(Pixmap, black),
     epx:pixmap_attach(Pixmap),
@@ -248,6 +252,10 @@ loop(Window,Pixmap,W,H,PsPix={Ps,Pix},View,X0,Y0,Z0,T) ->
 	    flush_motions(Window),
 	    loop(Window,Pixmap,W,H,PsPix,View,X1,Y1,Z1,Tn);
 
+	{epx_event,Window,{resize,{W1,H1,_D1}}} ->
+	    Pixmap1 = resize_pixmap(Pixmap,W1,H1),
+	    loop(Window,Pixmap1,W1,H1,PsPix,View,X0,Y0,Z0,T);
+
 	{egear_event,ERef,Info} ->
 	    _Value = proplists:get_value(value,Info,0),
 	    Dir    = proplists:get_value(direction,Info,1),
@@ -272,6 +280,27 @@ loop(Window,Pixmap,W,H,PsPix={Ps,Pix},View,X0,Y0,Z0,T) ->
 	    io:format("event = ~p\n", [Event]),
 	    loop(Window,Pixmap,W,H,PsPix,View,X0,Y0,Z0,T)
     end.
+
+resize_pixmap(undefined, W, H) ->
+    Pixmap = next_pixmap(W,H),
+    epx:pixmap_attach(Pixmap),
+    Pixmap;
+resize_pixmap(Pixmap, W, H) ->
+    case epx:pixmap_info(Pixmap,[width,height]) of
+	[{width,PW},{height,PH}] when PW < W; PH < H ->
+	    epx:pixmap_detach(Pixmap),
+	    Pixmap1 = next_pixmap(W,H),
+	    epx:pixmap_attach(Pixmap1),
+	    Pixmap1;
+	_ ->
+	    Pixmap
+    end.
+
+next_pixmap(W,H) ->
+    NPW = 1 bsl ceil(math:log2(W)),
+    NPH = 1 bsl ceil(math:log2(H)),
+    epx:pixmap_create(NPW, NPH).
+    
 
 zmove({Fow,CameraVec,EyeMatrix,CameraTransform}, Dz) ->
     CameraVec1 = matrix:add(CameraVec,
