@@ -683,7 +683,7 @@ find_ps_pid(Pid, Ps0,Ps1) ->
 
 window(Em,W,H) ->
     E = [key_press,key_release, button_press, button_release,
-	 resize, motion, left],
+	 configure, motion, left],
     Win = epx:window_create(50, 50, W, H, E),
     epx:window_attach(Win),
     B = epx_backend:default(),
@@ -706,7 +706,7 @@ configure(Em, W0, H0) ->
     V_W = W - (V_X + ?VIEW_RIGHT_OFFS),
     V_H = H - (V_Y + ?VIEW_BOTTOM_OFFS),
     Em#emon { view={V_X,V_Y,V_W,V_H}, 
-	      pix = Pix1, width = W, height = H }.
+	      pix = Pix1, width = W0, height = H0 }.
 
 resize_pixmap(undefined, W, H) ->
     Pixmap = next_pixmap(W,H),
@@ -784,14 +784,14 @@ window_loop(Em) ->
 	{epx_event,Win,{button_release,[left],_}} ->
 	    window_loop(Em);
 
-	{epx_event,Win,{resize, {W,H,_D}}} ->
-	    if W =:= Em#emon.width, H =:= Em#emon.height ->
-		    window_loop(Em);
-	       true ->
+	{epx_event,Win,{configure, {_X,_Y,W,H}}} ->
+	    if W =/= Em#emon.width; H =/= Em#emon.height ->
 		    Em1 = configure(Em, W, H),
 		    epx:sync(Win),
 		    Em2 = redraw(Em1),
-		    window_loop(Em2)
+		    window_loop(Em2);
+	       true ->
+		    window_loop(Em)
 	    end;
 	_Other ->
 	    io:format("EVENT: ~p\n", [_Other]),
