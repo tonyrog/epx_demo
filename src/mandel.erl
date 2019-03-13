@@ -36,6 +36,9 @@
 	  iter      %% max iteration
 	 }).
 
+-define(USE_OFF_SCREEN, true).
+-define(USE_EXPOSURE, true).
+
 -define(debug(F,A), ok).
 %% -define(debug(F,A), io:format((F),(A))).
 
@@ -53,7 +56,10 @@ start(W, H, Opts) ->
     start(50, 50, W, H, Opts).
 
 start(X, Y, W, H, Opts) ->
-    epx:start(),
+    application:load(epx),
+    application:set_env(epx, use_off_screen, ?USE_OFF_SCREEN),
+    application:set_env(epx, use_exposure, ?USE_EXPOSURE),
+    application:ensure_all_started(epx),
     spawn_link(fun() -> init(X,Y,W,H,Opts) end).
 
 view0(W,H,Opts) ->
@@ -67,7 +73,7 @@ init(X,Y,W,H,Opts) ->
     %% create the window
     Win = epx:window_create(X, Y, W, H, [key_press,key_release,
 					 motion, left,  %% motion-left-button
-					 resize,
+					 configure, expose,
 					 button_press,button_release]),
     epx:window_attach(Win),  %% connect to default backend
     %% create the drawing pixmap
@@ -173,13 +179,20 @@ loop(S) ->
 		_Error ->
 		    loop(S)
 	    end;
-	{epx_event,_Win,{resize, {W,H,_D}}} ->
+	{epx_event,_Win,{configure, Rect}} ->
+	    {_X,_Y,W,H} = flush_configure(S#s.win, Rect),
 	    P0 = S#s.view,
 	    P1 = P0#view { w=W, h=H },
-	    S1 = S#s { w=W, h=H, view=P1 },
-	    ?debug("RESIZE: ~w ~w\n", [W, H]),
-	    %% redraw later... - fixme
+	    Pix = resize_pixmap(S#s.pix, W, H),
+	    S1 = S#s { w=W, h=H, pix=Pix, view=P1 },
+	    ?debug("CONFIGURE: ~w ~w\n", [W, H]),
 	    loop(S1);
+
+	{epx_event,_Win,{expose, Rect}} ->
+	    {_X,_Y,_W,_H} = flush_expose(S#s.win, Rect),
+	    ?debug("EXPOSE: ~w ~w\n", [_W, _H]),
+	    draw(S#s.win,S#s.pix,S#s.view,S),
+	    loop(S);
 
 	{epx_event,_Win,{key_press, Sym, _Mod, _Code}} ->
 	    case Sym of
@@ -241,6 +254,23 @@ loop(S) ->
 	    %% io:format("Got: ~p\n", [_Other]),
 	    loop(S)
     end.
+
+flush_configure(Win, Rect) ->
+    receive
+	{epx_event, Win, {configure, Rect1}} ->
+	    flush_configure(Win, Rect1)
+    after 0 ->
+	    Rect
+    end.
+
+flush_expose(Win, Rect) ->
+    receive
+	{epx_event, Win, {expose, Rect1}} ->
+	    flush_expose(Win, Rect1)
+    after 0 ->
+	    Rect
+    end.
+    
 
 msign(X,A) when X < 0 -> -A;
 msign(X,A) when X > 0 ->  A;
@@ -353,8 +383,7 @@ draw(Win,Pix,View,S) ->
     end.
 
 pdraw(Win,Pix,P,S,N) ->
-    io:format("~w/~w: pdraw P=~p\n", 
-	      [self(),erlang:system_info(scheduler_id),P]),
+%%    io:format("~w/~w: pdraw P=~p\n",[self(),erlang:system_info(scheduler_id),P]),
     if P#view.w =:= 0; P#view.h =:= 0 ->
 	    ok;
        P#view.w =< N; P#view.h =< N ->
@@ -830,3 +859,24 @@ z2(Max,K,Cx,Cy,A,B,A2,B2) ->
 		    K
 	    end
     end.
+
+
+resize_pixmap(undefined, W, H) ->
+    Pixmap = next_pixmap(W,H),
+    epx:pixmap_attach(Pixmap),
+    Pixmap;
+resize_pixmap(Pixmap, W, H) ->
+    case epx:pixmap_info(Pixmap,[width,height]) of
+	[{width,PW},{height,PH}] when PW < W; PH < H ->
+	    epx:pixmap_detach(Pixmap),
+	    Pixmap1 = next_pixmap(W,H),
+	    epx:pixmap_attach(Pixmap1),
+	    Pixmap1;
+	_ ->
+	    Pixmap
+    end.
+
+next_pixmap(W,H) ->
+    NPW = 1 bsl ceil(math:log2(W)),
+    NPH = 1 bsl ceil(math:log2(H)),
+    epx:pixmap_create(NPW, NPH, argb).

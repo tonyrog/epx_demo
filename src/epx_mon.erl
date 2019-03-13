@@ -29,8 +29,8 @@
 -define(MIN_WIDTH,  100).
 -define(MIN_HEIGHT, 64).
 
--define(WIN_WIDTH,  800).
--define(WIN_HEIGHT, 480).
+-define(WIN_WIDTH,  400).
+-define(WIN_HEIGHT, 240).
 -define(WIN_BG_COLOR, {0,0,0}).
 %% Buffer view constants
 -define(VIEW_LEFT_OFFS,   64).
@@ -724,8 +724,8 @@ resize_pixmap(Pixmap, W, H) ->
     end.
 
 next_pixmap(W,H) ->
-    NPW = 1 bsl ceil(math:log2(W)),
-    NPH = 1 bsl ceil(math:log2(H)),
+    NPW = W + (W div 2), %% 1 bsl ceil(math:log2(W)),
+    NPH = H + (H div 2), %% 1 bsl ceil(math:log2(H)),
     epx:pixmap_create(NPW, NPH).
     
 window_loop(Em) ->

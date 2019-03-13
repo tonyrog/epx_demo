@@ -183,6 +183,22 @@ draw_rectangles(N, W, H, Style) ->
 		  epx:draw_rectangle(Pix, X, Y, Width, Height)
 	  end, W, H).
 
+draw_circles_solid(N) ->
+    draw_circles(N, 640, 480, solid).
+
+draw_circles_blend(N) ->
+    draw_circles(N, 640, 480, blend).
+
+draw_circles(N, W, H, Style) ->
+    epx_gc:set_fill_style(Style),
+    start(N,
+	  fun(Pix) ->
+		  epx_gc:set_fill_color(random_color()),
+		  {X,Y} = random_point(W, H),
+		  Side = random_interval(10, 100),
+		  epx:draw_ellipse(Pix, X, Y, Side, Side)
+	  end, W, H).
+
 start(N, Func, W, H) ->
     epx:start(),
     Win = epx:window_create(50,50,W,H,[button_press,key_press]),
@@ -191,13 +207,14 @@ start(N, Func, W, H) ->
     epx:pixmap_fill(Pix, white),
     epx:pixmap_attach(Pix),
     loop(N, Func, Win, Pix, W, H),
-    recv_loop(N+1, Func, Win, Pix, W, H).
+    recv_loop(N, Func, Win, Pix, W, H).
 
-recv_loop(I, Func, Win, Pix, W, H) ->
+recv_loop(N, Func, Win, Pix, W, H) ->
     receive
 	{epx_event,Win,{button_press,[left],{_X,_Y,_Z}}} ->
-	    exec(Func, Win, Pix, W, H),
-	    recv_loop(I+1, Func, Win, Pix, W, H);
+	    epx:pixmap_fill(Pix, {255,255,255,255}),
+	    loop(N, Func, Win, Pix, W, H),
+	    recv_loop(N, Func, Win, Pix, W, H);
 	{epx_event,Win, close} ->
 	    epx:window_detach(Win),
 	    epx:pixmap_detach(Pix),
@@ -211,7 +228,6 @@ loop(I, Func, Win, Pix, W, H) ->
     loop(I-1, Func, Win, Pix, W, H).
 
 exec(Func, Win, Pix, W, H) ->
-    epx:pixmap_fill(Pix, {255,255,255,255}),
     Func(Pix),
     epx:pixmap_draw(Pix,Win,0,0,0,0,W, H),
     epx:sync(Pix,Win).
