@@ -182,13 +182,30 @@ draw_triangles_blend(N) ->
 
 draw_triangles(N, W, H, Style) ->
     epx_gc:set_fill_style(Style),
-    start(N,
+    epx_gc:set_fill_color(random_color()),
+%%    Triangles = 
+%%	[{random_point(W, H), random_point(W, H), random_point(W, H)} ||
+%%	    _ <- lists:seq(1,N)],
+    Side = 40,
+    Offs = 50,
+    N0 = Offs,
+    N1 = Side + Offs,
+    N23 = ((3*Side) div 2) + Offs,
+    N2 = 2*Side + Offs,
+    N3 = 3*Side + Offs,
+
+    Triangles = 
+	[{{N23,N0}, {N1,N1}, {N2,N1}},
+	 {{N0,N23}, {N1,N1}, {N1,N2}},
+	 {{N1,N2}, {N23,N3}, {N2,N2}},
+	 {{N2,N1}, {N3,N23}, {N2,N2}},
+	 %% interior
+	 {{N1,N1},{N2,N1},{N2,N2}},  %% UR
+	 {{N1,N1},{N2,N2},{N1,N2}}   %% LR
+	],
+    start(1,
 	  fun(Pix) ->
-		  epx_gc:set_fill_color(random_color()),
-		  P1 = random_point(W, H),
-		  P2 = random_point(W, H),
-		  P3 = random_point(W, H),
-		  epx:draw_triangle(Pix, P1, P2, P3)
+		  epx:draw_triangles(Pix, Triangles)
 	  end, W, H).
 
 draw_rectangles_solid(N) ->
