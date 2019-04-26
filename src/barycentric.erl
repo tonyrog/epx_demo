@@ -36,7 +36,12 @@
 	 p0,
 	 p1,
 	 p2,
-	 color,
+	 dim = 2, %% or 3
+	 iz,      %% {1/P0z,1/P1z,1/P2z}
+	 minz,    %% min(P0z,P1z,P2z)
+	 maxz,    %% max(P0z,P1z,P2z)
+	 dz,      %% (maxZ - minZ)
+	 color,   %% either {R,G,B} or {{R0,G0,B0},{R1,G1,B1},{R2,G2,B2},
 	 k
 	}).
 
@@ -54,12 +59,11 @@
 %% We should be able to run several triangles at one!!!
 %% possibly using simd vector operations
 
-draw_triangle(Pixmap,{X0,Y0},{X1,Y1},{X2,Y2},Color) ->
-    draw_triangle(Pixmap,{X0,Y0,1.0},{X1,Y1,1.0},{X2,Y2,1.0},Color);
-draw_triangle(Pixmap,P0,P1,P2,Color) ->
-    {X0,Y0,_} = point_3d(?SCALE, P0),
-    {X1,Y1,_} = point_3d(?SCALE, P1),
-    {X2,Y2,_} = point_3d(?SCALE, P2),
+draw_triangle(Pixmap,P0,P1,P2,Color) when 
+      tuple_size(P0) =:= 2, tuple_size(P1) =:= 2, tuple_size(P2) =:= 2 ->
+    {X0,Y0} = mult(?SCALE, P0),
+    {X1,Y1} = mult(?SCALE, P1),
+    {X2,Y2} = mult(?SCALE, P2),
     Xl = min(X0,X1,X2),
     Xr = max(X0,X1,X2),
     Yu = min(Y0,Y1,Y2),
@@ -71,7 +75,30 @@ draw_triangle(Pixmap,P0,P1,P2,Color) ->
     Qy = Yu - Y0,
     S0 = (Qx*V2y - Qy*V2x),
     T0 = (V1x*Qy - V1y*Qx),
-    Tri = #triangle{ p0=P0, p1=P1, p2=P2, color=Color, k=K },
+    Tri = #triangle{ p0=P0, p1=P1, p2=P2, dim=2, color=Color, k=K },
+    scan_y(Pixmap,trunc(Yu),trunc(Yd),S0,T0,trunc(Xl),trunc(Xr),V1,V2,K,Tri);
+
+draw_triangle(Pixmap,P0,P1,P2,Color) when
+      tuple_size(P0) =:= 3, tuple_size(P1) =:= 3, tuple_size(P2) =:= 3 ->
+    {X0,Y0,Z0} = mult(?SCALE, P0),
+    {X1,Y1,Z1} = mult(?SCALE, P1),
+    {X2,Y2,Z2} = mult(?SCALE, P2),
+    Xl = min(X0,X1,X2),
+    Xr = max(X0,X1,X2),
+    Yu = min(Y0,Y1,Y2),
+    Yd = max(Y0,Y1,Y2),
+    Zb = min(Y0,Y1,Y2),
+    Zf = max(Y0,Y1,Y2),
+    V1 = {V1x=(X1-X0), V1y=(Y1-Y0)},
+    V2 = {V2x=(X2-X0), V2y=(Y2-Y0)},
+    K = cross(V1,V2),
+    Qx = Xl - X0,
+    Qy = Yu - Y0,
+    S0 = (Qx*V2y - Qy*V2x),
+    T0 = (V1x*Qy - V1y*Qx),
+    Tri = #triangle{ p0=P0, p1=P1, p2=P2, dim=3,
+		     iz = {1/Z0,1/Z1,1/Z2},
+		     minz=Zb, maxz=Zf, dz=(Zf-Zb), color=Color, k=K },
     scan_y(Pixmap,trunc(Yu),trunc(Yd),S0,T0,trunc(Xl),trunc(Xr),V1,V2,K,Tri).
 
 %% do one line only in the barycentric algorithm
@@ -158,27 +185,27 @@ scan_x_klti(Pixmap,X,Xr,Y,K,S,Si,T,Tj,Tri) ->
 	    ok	    
     end.
 
-plot_0(Pixmap,X,Y,_S,_T,_K,Tri) ->
-    Color = Tri#triangle.color,
-    ?PUT_PIXEL(Pixmap,X,Y,Color).
+plot(Pixmap,X,Y,S0,T0,K,Tri) ->
+    if Tri#triangle.dim =:= 2 ->
+	    case Tri#triangle.color of
+		{C0,C1,C2} when is_tuple(C0),is_tuple(C1),is_tuple(C2) ->
+		    S = S0/K, T = T0/K,
+		    Color1 = rgb8(add(add(mult(1-(S+T),C0),
+					  mult(S,C1)),
+				      mult(T,C2))),
+		    ?PUT_PIXEL(Pixmap,X,Y,Color1);
+		Color ->
+		    ?PUT_PIXEL(Pixmap,X,Y,Color)
+	    end;
+       Tri#triangle.dim =:= 3 ->
+	    S = S0/K, T = T0/K,
+	    {IZ0,IZ1,IZ2} = Tri#triangle.iz,
+	    Z = 1/(IZ0*(1-(S+T)) + IZ1*S + IZ2*T),
+	    G = (Z - Tri#triangle.minz) / (Tri#triangle.dz),
+	    Color1 = rgb8({G,G,G}),
+	    ?PUT_PIXEL(Pixmap,X,Y,Color1)
+    end.
 
-plot(Pixmap,X,Y,S0,T0,K,_Tri) ->
-    C0 = {1,0,0}, C1 = {0,1,0}, C2 = {0,0,1},
-    S = S0/K, T = T0/K,
-    Color1 = rgb8(add(add(mult(1-(S+T),C0),mult(S,C1)),mult(T,C2))),
-    ?PUT_PIXEL(Pixmap,X,Y,Color1).
-
-plot_2(Pixmap,X,Y,S0,T0,K,Tri) ->
-    {_,_,P0z} = Tri#triangle.p0,
-    {_,_,P1z} = Tri#triangle.p1,
-    {_,_,P2z} = Tri#triangle.p2,
-    S = S0/K, T = T0/K,
-    Z = 1/((1/P0z)*(1-(S+T)) + (1/P1z)*S + (1/P2z)*T),
-    MinZ = min(P0z,P1z,P2z),
-    MaxZ = max(P0z,P1z,P2z),
-    G = (Z-MinZ) / (MaxZ-MinZ),
-    Color1 = rgb8({G,G,G}),
-    ?PUT_PIXEL(Pixmap,X,Y,Color1).
 
 cross({X0,Y0},{X1,Y1}) -> X0*Y1 - Y0*X1.
 

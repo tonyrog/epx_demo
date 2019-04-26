@@ -68,6 +68,34 @@ draw_triangle_3() ->
 		  bresenham:draw_bary_triangle(Pixmap, P1, P2, P3, Color)
 	  end, W, H).
 
+
+draw_triangle_4() ->
+    W = 640,
+    H = 480,
+    start(1,
+	  fun(Pixmap) ->
+		  Color = {255,255,0,0},
+		  Color1 = {255,0,0,0},
+		  A = case get(angle) of
+			  undefined -> 0;
+			  A0 -> A0 + 10
+		      end,
+		  put(angle, A),
+		  Xc = 640 div 2,
+		  Yc = 480 div 2,
+		  R  = 50,
+		  Bw = 5,
+		  Q  = R+Bw,
+		  P0 = {Xc+R*cos(A),    Yc+R*sin(A)},
+		  P1 = {Xc+R*cos(A+120),Yc+R*sin(A+120)},
+		  P2 = {Xc+R*cos(A+240),Yc+R*sin(A+240)},
+		  Q0 = {Xc+Q*cos(A),    Yc+Q*sin(A)},
+		  Q1 = {Xc+Q*cos(A+120),Yc+Q*sin(A+120)},
+		  Q2 = {Xc+Q*cos(A+240),Yc+Q*sin(A+240)},
+		  barycentric:draw_triangle(Pixmap, Q0, Q1, Q2, Color1),
+		  barycentric:draw_triangle(Pixmap, P0, P1, P2, Color)
+	  end, W, H).
+
 cos(A) -> math:cos(fmod(A,360) * math:pi()/180).
 sin(A) -> math:sin(fmod(A,360) * math:pi()/180).
 
