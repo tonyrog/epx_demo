@@ -133,14 +133,17 @@ gen_circle_strip(M) ->
 
 gen_circle_strip(M, Xc, Yc, R1, R2) ->
     V = (2*math:pi())/M,
-    L1 = [begin A  = (I rem M)*V,
-		 [ {trunc(Xc + R1*math:cos(A)),
-		    trunc(Yc + R1*math:sin(A)) },
-		   {trunc(Xc + R2*math:cos(A)),
-		    trunc(Yc + R2*math:sin(A)) } ]
-	   end || I <- lists:seq(0, M)],
-    lists:append(L1).
+    gen_circle_strip_(0.0, V, M+1, Xc, Yc, R1, R2, []).
 
+gen_circle_strip_(A, V, 0, Xc, Yc, R1, R2, Acc) ->
+    lists:reverse(Acc);
+gen_circle_strip_(A, V, I, Xc, Yc, R1, R2, Acc) ->
+    X1 = Xc + R1*math:cos(A),
+    Y1 = Yc + R1*math:sin(A),
+    X2 = Xc + R2*math:cos(A),
+    Y2 = Yc + R2*math:sin(A),
+    gen_circle_strip_(A+V, V, I-1, Xc, Yc, R1, R2,
+		      [{X2,Y2},{X1,Y1} | Acc]).
 
 draw_mesh_solid(N) ->
     draw_mesh(N, 640, 480, solid).
@@ -195,18 +198,59 @@ draw_triangles(N, W, H, Style) ->
     N3 = 3*Side + Offs,
 
     Triangles = 
-	[{{N23,N0}, {N1,N1}, {N2,N1}},
-	 {{N0,N23}, {N1,N1}, {N1,N2}},
+	[{{N0,N23},{N1,N2}, {N1,N1}},
+	 {{N2,N1}, {N1,N1}, {N23,N0}},
 	 {{N1,N2}, {N23,N3}, {N2,N2}},
-	 {{N2,N1}, {N3,N23}, {N2,N2}},
+	 {{N2,N1}, {N3,N23}, {N2,N2}}
 	 %% interior
-	 {{N1,N1},{N2,N1},{N2,N2}},  %% UR
-	 {{N1,N1},{N2,N2},{N1,N2}}   %% LR
+	 %%{{N1,N1},{N2,N1},{N2,N2}},  %% UR
+	 %%{{N1,N1},{N2,N2},{N1,N2}}   %% LR
 	],
     start(1,
 	  fun(Pix) ->
 		  epx:draw_triangles(Pix, Triangles)
 	  end, W, H).
+
+draw_triangles_fan() ->
+    draw_triangles_fan(1, 640, 480, solid).
+
+draw_triangles_fan(N, W, H, Style) ->
+    epx_gc:set_fill_style(Style),
+    epx_gc:set_fill_color(random_color()),
+    Side = 50,
+    Offs = 100,
+    M = 16,
+    Xc = Offs,
+    Yc = Offs,
+    V = (2*math:pi())/M,
+    Pts = [begin
+	       A  = (I rem M)*V,
+	       {Xc + Side*math:cos(A), Yc + Side*math:sin(A)}
+	   end || I <- lists:seq(0, M-1)],
+    Triangles = [{Xc,Yc} | Pts],
+    start(1,
+	  fun(Pix) ->
+		  epx:draw_fan(Pix, Triangles, true)
+	  end, W, H).
+
+draw_triangles_strip() ->
+    draw_triangles_strip(1, 640, 480, solid).
+
+draw_triangles_strip(N, W, H, Style) ->
+    epx_gc:set_fill_style(Style),
+    epx_gc:set_fill_color(random_color()),
+    M = 32,
+    Side = 50,
+    Offs = 100,
+
+    Strip = gen_circle_strip(M, Offs, Offs, Side, Side-10),
+    %%Strip = [{50,50}, {50,100}, {100, 50}, {100, 100}, {150,60}, {150, 110}],
+
+    start(1,
+	  fun(Pix) ->
+		  epx:draw_strip(Pix, Strip)
+	  end, W, H).
+
 
 draw_rectangles_solid(N) ->
     draw_rectangles(N, 640, 480, solid).
