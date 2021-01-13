@@ -166,24 +166,22 @@ task_wait(Z,P,V,R,Time,Color0) ->
 
 %% explode by starting N-1 new tasks and set them of 
 %% in different angles
-task_explode(Z,P,_V,R,_Color0) ->
+task_explode(Z,P,V,R,_Color0) ->
     N = R-?INIT_RADIUS,
     A = (2*math:pi())/N,
     lists:foreach(
       fun(I) ->
 	      Color = {255,255,255},
-	      V1 = vector_dir(A*I),
-	      P1 = vector_add(P,vector_scale(2,V1)),
+	      Vi = vector_add(V, vector_dir(A*I)),
+	      Pi = vector_add(P,vector_scale(2,Vi)),
 	      spawn(fun() ->
 			    rand:uniform(),
-			    task_init(rand:export_seed(),P1,V1,
+			    task_init(rand:export_seed(),Pi,Vi,
 				      ?INIT_RADIUS,Color)
 		    end)
       end, lists:seq(0,N-2)),
     V1 = vector_dir(A*(N-1)),
     task_wait(Z,P,V1,?INIT_RADIUS,0,{255,255,255}).
-
-    
 
 %% check if we collide with other task
 task_collision(Z,V,R,Color) ->

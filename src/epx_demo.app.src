@@ -1,6 +1,8 @@
+%% -*- erlang -*-
 {application, epx_demo,
  [{description, "Epx demo code"},
   {vsn, git},
+  {modules, ["@@MODULES@@"]},
   {env, []},
   {applications,[kernel,stdlib,epx]}
   ]}.
