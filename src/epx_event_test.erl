@@ -9,10 +9,10 @@
 
 -include_lib("epx/include/epx.hrl").
 
-run() ->
-    run([key_press, key_release]).
+start() ->
+    start([key_press, key_release]).
 
-run(EventMask) ->
+start(EventMask) ->
     Win = epx:window_create(50, 50, 100, 100, EventMask),
     epx:window_attach(Win),
     loop(Win).
