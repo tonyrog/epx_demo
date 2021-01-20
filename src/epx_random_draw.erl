@@ -21,7 +21,6 @@ draw_triangle_1() ->
 		  put(angle, A),
 		  Xc = 640 div 2,
 		  Yc = 480 div 2,
-		  R  = 50,
 		  P1 = {Xc+50*cos(A),    Yc+50*sin(A)},
 		  P2 = {Xc+50*cos(A+120),Yc+50*sin(A+120)},
 		  P3 = {Xc+50*cos(A+240),Yc+50*sin(A+240)},
@@ -41,7 +40,6 @@ draw_triangle_2() ->
 		  put(angle, A),
 		  Xc = 640 div 2,
 		  Yc = 480 div 2,
-		  R  = 50,
 		  P1 = {Xc+50*cos(A),    Yc+50*sin(A)},
 		  P2 = {Xc+50*cos(A+120),Yc+50*sin(A+120)},
 		  P3 = {Xc+50*cos(A+240),Yc+50*sin(A+240)},
@@ -61,7 +59,6 @@ draw_triangle_3() ->
 		  put(angle, A),
 		  Xc = 640 div 2,
 		  Yc = 480 div 2,
-		  R  = 50,
 		  P1 = {Xc+50*cos(A),    Yc+50*sin(A)},
 		  P2 = {Xc+50*cos(A+120),Yc+50*sin(A+120)},
 		  P3 = {Xc+50*cos(A+240),Yc+50*sin(A+240)},
@@ -135,7 +132,7 @@ gen_circle_strip(M, Xc, Yc, R1, R2) ->
     V = (2*math:pi())/M,
     gen_circle_strip_(0.0, V, M+1, Xc, Yc, R1, R2, []).
 
-gen_circle_strip_(A, V, 0, Xc, Yc, R1, R2, Acc) ->
+gen_circle_strip_(_A, _V, 0, _Xc, _Yc, _R1, _R2, Acc) ->
     lists:reverse(Acc);
 gen_circle_strip_(A, V, I, Xc, Yc, R1, R2, Acc) ->
     X1 = Xc + R1*math:cos(A),
@@ -183,7 +180,7 @@ draw_triangles_solid(N) ->
 draw_triangles_blend(N) ->
     draw_triangles(N, 640, 480, blend).
 
-draw_triangles(N, W, H, Style) ->
+draw_triangles(_N, W, H, Style) ->
     epx_gc:set_fill_style(Style),
     epx_gc:set_fill_color(random_color()),
 %%    Triangles = 
@@ -214,7 +211,7 @@ draw_triangles(N, W, H, Style) ->
 draw_triangles_fan() ->
     draw_triangles_fan(1, 640, 480, solid).
 
-draw_triangles_fan(N, W, H, Style) ->
+draw_triangles_fan(_N, W, H, Style) ->
     epx_gc:set_fill_style(Style),
     epx_gc:set_fill_color(random_color()),
     Side = 50,
@@ -236,7 +233,7 @@ draw_triangles_fan(N, W, H, Style) ->
 draw_triangles_strip() ->
     draw_triangles_strip(1, 640, 480, solid).
 
-draw_triangles_strip(N, W, H, Style) ->
+draw_triangles_strip(_N, W, H, Style) ->
     epx_gc:set_fill_style(Style),
     epx_gc:set_fill_color(random_color()),
     M = 32,
@@ -335,8 +332,7 @@ random_color() ->
      rand:uniform(200)+50,
      rand:uniform(200)+50}.
 
-draw_poly3_2(Pixmap,P0,P1,P2,_Color) ->
-
+draw_poly3_2(_Pixmap,_P0,_P1,_P2,_Color) ->
     ok.
 
 mult({X0,Y0},{X1,Y1}) ->  {X0*X1,Y0*Y1};
