@@ -27,16 +27,18 @@
 -define(VIEW_WIDTH,  720).
 -define(VIEW_HEIGHT, 720).
 -define(TEXT_COLOR, {0,0,0,0}).       %% black text
-    
+-define(BORDER, 2).    
 start() ->
     application:ensure_all_started(epx),
     epxw:start(#{ module => ?MODULE,
 		  %% demo select as fun
-		  select => fun(Rect, State) -> 
+		  select => fun(Rect={X,Y,W,H}, State) -> 
 				    io:format("SELECT: ~w\n", [Rect]),
 				    OldRect = maps:get(selection, State),
 				    epxw:invalidate(OldRect),
-				    epxw:invalidate(Rect),
+				    epxw:invalidate({X-?BORDER-2,Y-?BORDER-2,
+						     W+2*?BORDER+4,
+						     H+2*?BORDER+4}),
 				    State#{ selection => Rect }
 			    end
 		},
@@ -58,7 +60,7 @@ init(_Window, _Screen, Opts) ->
     {ok,Font} = epx_font:match([{size,24}]),
     Ascent = epx:font_info(Font, ascent),
     #{ font => Font, ascent => Ascent, text => "Hello World!",
-       selection => {0,0,0,0} }.
+       selection => undefined }.
 
 configure(Event, State) ->
     io:format("CONFIGURE: ~w\n", [Event]),
@@ -122,7 +124,7 @@ draw(Pixels, _Dirty,
 	    epx_gc:set_fill_style(blend),
 	    epx_gc:set_fill_color({127,127,127,127}),
 	    epx_gc:set_border_color(black),
-	    epx_gc:set_border_width(2),
+	    epx_gc:set_border_width(?BORDER),
 	    epx:draw_rectangle(Pixels, Selection)
     end,
     State.
