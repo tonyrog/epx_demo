@@ -20,8 +20,8 @@
 	 focus_out/2,
 	 close/1,
 	 draw/3,
-	 command/3,
-	 select/2
+	 command/3
+	 %% select/2  - fun 
 	]).
 
 -define(VIEW_WIDTH,  720).
@@ -30,7 +30,17 @@
     
 start() ->
     application:ensure_all_started(epx),
-    epxw:start(?MODULE, [], 
+    epxw:start(#{ module => ?MODULE,
+		  %% demo select as fun
+		  select => fun(Rect, State) -> 
+				    io:format("SELECT: ~w\n", [Rect]),
+				    OldRect = maps:get(selection, State),
+				    epxw:invalidate(OldRect),
+				    epxw:invalidate(Rect),
+				    State#{ selection => Rect }
+			    end
+		},
+	       [hello,world], 
 	       [{scroll_horizontal, bottom},
 		{scroll_vertical,   left},
 		{scroll_bar_color,  cyan},
@@ -43,7 +53,8 @@ start() ->
 		{view_width,?VIEW_WIDTH},
 		{view_height,?VIEW_HEIGHT}]).
 
-init(_Window, _Screen, _Opts) ->
+init(_Window, _Screen, Opts) ->
+    io:format("INIT: Opts=~w\n", [Opts]),
     {ok,Font} = epx_font:match([{size,24}]),
     Ascent = epx:font_info(Font, ascent),
     #{ font => Font, ascent => Ascent, text => "Hello World!",
@@ -116,9 +127,9 @@ draw(Pixels, _Dirty,
     end,
     State.
 
-select(Rect, State) ->
-    io:format("SELECT: ~w\n", [Rect]),
-    State# { selection => Rect }.
+%%select(Rect, State) ->
+%%    io:format("SELECT: ~w\n", [Rect]),
+%%    State# { selection => Rect }.
 
 command(Key, Mod, State) ->
     io:format("COMMAND: Key=~w, Mod=~w\n", [Key, Mod]),
