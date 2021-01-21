@@ -20,26 +20,40 @@
 	 focus_out/2,
 	 close/1,
 	 draw/3,
-	 command/3
+	 command/3,
+	 select/2
 	]).
 
--define(VIEW_WIDTH,  1024).
--define(VIEW_HEIGHT, 768).
+-define(VIEW_WIDTH,  720).
+-define(VIEW_HEIGHT, 720).
 -define(TEXT_COLOR, {0,0,0,0}).       %% black text
     
 start() ->
     application:ensure_all_started(epx),
     epxw:start(?MODULE, [], 
-	       [{view_width,?VIEW_WIDTH},{view_height,?VIEW_HEIGHT}]).
+	       [{scroll_horizontal, bottom},
+		{scroll_vertical,   left},
+		{scroll_bar_color,  cyan},
+		{scroll_hndl_color, blue},
+		{left_bar, 20},
+		{top_bar, 20},
+		{right_bar, 20},
+		{width, 256},
+		{height, 256},
+		{view_width,?VIEW_WIDTH},
+		{view_height,?VIEW_HEIGHT}]).
 
 init(_Window, _Screen, _Opts) ->
     {ok,Font} = epx_font:match([{size,24}]),
     Ascent = epx:font_info(Font, ascent),
-    epxw:set_status_text("Hello World"),
-    #{ font => Font, ascent => Ascent, text => "Hello World!" }.
+    #{ font => Font, ascent => Ascent, text => "Hello World!",
+       selection => {0,0,0,0} }.
 
 configure(Event, State) ->
     io:format("CONFIGURE: ~w\n", [Event]),
+    Status = io_lib:format("Hello World, Dimension: ~wx~w",
+			   [epxw:width(),epxw:height()]),
+    epxw:set_status_text(Status),
     State.
 
 key_press(Event, State) ->
@@ -78,9 +92,10 @@ close(State) ->
     io:format("CLOSE:\n", []),
     State.
 
-draw(Pixels, _Rect, 
-     State= #{ font := Font, text := Text, ascent := Ascent }) ->
-    %% io:format("Rect = ~p\n", [Rect]),
+draw(Pixels, _Dirty, 
+     State= #{ font := Font, text := Text, ascent := Ascent,
+	       selection := Selection }) ->
+    io:format("DRAW: Rect = ~p\n", [_Dirty]),
     {X0,Y0} = epxw:content_pos(),
     epx_gc:set_font(Font),
     {W,H}  = epx_font:dimension(Font,Text),
@@ -88,7 +103,22 @@ draw(Pixels, _Rect,
     X = (?VIEW_WIDTH - W) div 2,
     Y = ((?VIEW_HEIGHT - H) div 2) + Ascent,
     epx:draw_string(Pixels, X-X0, Y-Y0, Text),
+    case Selection of 
+	undefined -> empty;
+	{_,_,0,_} -> empty;
+	{_,_,_,0} -> empty;
+	_ ->
+	    epx_gc:set_fill_style(blend),
+	    epx_gc:set_fill_color({127,127,127,127}),
+	    epx_gc:set_border_color(black),
+	    epx_gc:set_border_width(2),
+	    epx:draw_rectangle(Pixels, Selection)
+    end,
     State.
+
+select(Rect, State) ->
+    io:format("SELECT: ~w\n", [Rect]),
+    State# { selection => Rect }.
 
 command(Key, Mod, State) ->
     io:format("COMMAND: Key=~w, Mod=~w\n", [Key, Mod]),
