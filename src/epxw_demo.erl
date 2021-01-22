@@ -20,8 +20,8 @@
 	 focus_out/2,
 	 close/1,
 	 draw/3,
-	 command/3
-	 %% select/2  - fun 
+	 command/3,
+	 select/2
 	]).
 
 -define(VIEW_WIDTH,  720).
@@ -33,7 +33,7 @@ start() ->
     epxw:start(#{ module => ?MODULE,
 		  %% demo select as fun
 		  select => fun(Rect={X,Y,W,H}, State) -> 
-				    io:format("SELECT: ~w\n", [Rect]),
+				    io:format("SELECT FUN: ~w\n", [Rect]),
 				    OldRect = maps:get(selection, State),
 				    epxw:invalidate(OldRect),
 				    epxw:invalidate({X-?BORDER-2,Y-?BORDER-2,
@@ -43,13 +43,16 @@ start() ->
 			    end
 		},
 	       [hello,world], 
-	       [{scroll_horizontal, bottom},
-		{scroll_vertical,   left},
+	       [{title, "Demo"},
+		{scroll_horizontal, bottom},  %% none|top|bottom
+		{scroll_vertical,   left},    %% none|left|right
 		{scroll_bar_color,  cyan},
 		{scroll_hndl_color, blue},
-		{left_bar, 20},
+		{scroll_bar_size,   14},
+		{scroll_hndl_size,  10},
+		{left_bar, 32},
 		{top_bar, 20},
-		{right_bar, 20},
+		{right_bar, 8},
 		{width, 256},
 		{height, 256},
 		{view_width,?VIEW_WIDTH},
@@ -109,7 +112,7 @@ draw(Pixels, _Dirty,
      State= #{ font := Font, text := Text, ascent := Ascent,
 	       selection := Selection }) ->
     io:format("DRAW: Rect = ~p\n", [_Dirty]),
-    {X0,Y0} = epxw:content_pos(),
+    {X0,Y0} = epxw:view_pos(),
     epx_gc:set_font(Font),
     {W,H}  = epx_font:dimension(Font,Text),
     epx_gc:set_foreground_color(?TEXT_COLOR),
@@ -129,9 +132,9 @@ draw(Pixels, _Dirty,
     end,
     State.
 
-%%select(Rect, State) ->
-%%    io:format("SELECT: ~w\n", [Rect]),
-%%    State# { selection => Rect }.
+select(Rect, State) ->
+    io:format("SELECT: ~w\n", [Rect]),
+    State# { selection => Rect }.
 
 command(Key, Mod, State) ->
     io:format("COMMAND: Key=~w, Mod=~w\n", [Key, Mod]),
