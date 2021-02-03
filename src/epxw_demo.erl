@@ -112,13 +112,14 @@ draw(Pixels, _Dirty,
      State= #{ font := Font, text := Text, ascent := Ascent,
 	       selection := Selection }) ->
     io:format("DRAW: Rect = ~p\n", [_Dirty]),
-    {X0,Y0} = epxw:view_pos(),
+    %% {X0,Y0} = epxw:view_pos(),
     epx_gc:set_font(Font),
     {W,H}  = epx_font:dimension(Font,Text),
     epx_gc:set_foreground_color(?TEXT_COLOR),
     X = (?VIEW_WIDTH - W) div 2,
     Y = ((?VIEW_HEIGHT - H) div 2) + Ascent,
-    epx:draw_string(Pixels, X-X0, Y-Y0, Text),
+    %% epx:draw_string(Pixels, X-X0, Y-Y0, Text),
+    epx:draw_string(Pixels, X, Y, Text),
     case Selection of 
 	undefined -> empty;
 	{_,_,0,_} -> empty;
