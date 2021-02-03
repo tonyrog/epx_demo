@@ -6,6 +6,7 @@
 %%% Created : 20 Jan 2021 by Tony Rogvall <tony@rogvall.se>
 
 -module(epxw_demo).
+-behavious(epxw).
 
 -export([start/0]).
 -export([init/3,
@@ -112,14 +113,29 @@ draw(Pixels, _Dirty,
      State= #{ font := Font, text := Text, ascent := Ascent,
 	       selection := Selection }) ->
     io:format("DRAW: Rect = ~p\n", [_Dirty]),
-    %% {X0,Y0} = epxw:view_pos(),
+
+    epx_gc:set_fill_style(solid),
+    epx_gc:set_fill_color(white),
+    epx:draw_rectangle(Pixels, {(?VIEW_HEIGHT div 2)-50,
+				(?VIEW_WIDTH div 2)-50,
+				100,100}),
+    epx_gc:set_fill_color(red),
+    epx:draw_rectangle(Pixels, {0,0,100,100}),
+    epx_gc:set_fill_color(green),
+    epx:draw_rectangle(Pixels, {0,?VIEW_WIDTH-100,100,100}),
+    epx_gc:set_fill_color(blue),
+    epx:draw_rectangle(Pixels, {?VIEW_HEIGHT-100,0,100,100}),
+    epx_gc:set_fill_color(yellow),
+    epx:draw_rectangle(Pixels, {?VIEW_HEIGHT-100,?VIEW_WIDTH-100,100,100}),
+
     epx_gc:set_font(Font),
     {W,H}  = epx_font:dimension(Font,Text),
     epx_gc:set_foreground_color(?TEXT_COLOR),
     X = (?VIEW_WIDTH - W) div 2,
     Y = ((?VIEW_HEIGHT - H) div 2) + Ascent,
-    %% epx:draw_string(Pixels, X-X0, Y-Y0, Text),
-    epx:draw_string(Pixels, X, Y, Text),
+    epx:draw_string(Pixels, X, Y, Text),    
+
+
     case Selection of 
 	undefined -> empty;
 	{_,_,0,_} -> empty;
