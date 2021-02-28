@@ -11,7 +11,7 @@
 -include_lib("epx/include/epx_menu.hrl").
 
 -export([start/0]).
--export([init/3,
+-export([init/1,
 	 configure/2,
 	 key_press/2,
 	 key_release/2,
@@ -25,6 +25,7 @@
 	 draw/3,
 	 command/3,
 	 select/2,
+	 motion/2,
 	 menu/2
 	]).
 
@@ -40,8 +41,8 @@
 	 menu_border_color             = green
 	}).
 
--define(verbose(F,A), ok).
-%%-define(verbose(F,A), io:format((F),(A))).
+%% -define(verbose(F,A), ok).
+-define(verbose(F,A), io:format((F),(A))).
 
 -define(VIEW_WIDTH,  720).
 -define(VIEW_HEIGHT, 720).
@@ -76,8 +77,8 @@ start() ->
     application:ensure_all_started(epx),
     epxw:start(#{ module => ?MODULE,
 		  %% demo select as fun
-		  select => fun({select,Rect={X,Y,W,H}}, State) -> 
-				    ?verbose("SELECT FUN: ~w\n", [Rect]),
+		  select => fun(Event={_Phase,Rect={X,Y,W,H}}, State) -> 
+				    ?verbose("SELECT FUN: ~w\n", [Event]),
 				    OldRect = maps:get(selection, State),
 				    epxw:invalidate(OldRect),
 				    epxw:invalidate({X-?BORDER-2,Y-?BORDER-2,
@@ -102,7 +103,7 @@ start() ->
 		{view_width,?VIEW_WIDTH},
 		{view_height,?VIEW_HEIGHT}]).
 
-init(_Window, _Screen, _Opts) ->
+init(_Opts) ->
     ?verbose("INIT: Opts=~w\n", [_Opts]),
     {ok,Font} = epx_font:match([{size,24}]),
     Ascent = epx:font_info(Font, ascent),
@@ -124,31 +125,33 @@ init(_Window, _Screen, _Opts) ->
 
     Rw = 100, Rh = 100, Dx = 3, Dy = 3,
 
-    #{ font => Font, 
-       ascent => Ascent,
-       text => "Hello World!",
-       red_menu => RedMenu,
-       green_menu => GreenMenu,
-       blue_menu => BlueMenu,
-       yellow_menu => YellowMenu,
-       pink_menu => PinkMenu,
-       menu_map =>
-	   #{ {(?VIEW_WIDTH div 2)-50,(?VIEW_HEIGHT div 2)-50,Rw,Rh} =>
-		  {white,PinkMenu},
-	      {Dx,Dy,Rw,Rh} => 
-		  {red,RedMenu},
-	      {Dx,?VIEW_HEIGHT-Rh-Dy,Rw,Rh} =>
-		  {green,GreenMenu},
-	      {?VIEW_WIDTH-Rw-Dx,Dy,Rw,Rh} => 
-		  {blue,BlueMenu},
-	      {?VIEW_WIDTH-Rw-Dx,?VIEW_HEIGHT-Rh-Dy,Rw,Rh} => 
-		  {yellow,YellowMenu}
-	    },
-       selection => {0,0,0,0}
-     }.
+    State = 
+	#{ font => Font, 
+	   ascent => Ascent,
+	   text => "Hello World!",
+	   red_menu => RedMenu,
+	   green_menu => GreenMenu,
+	   blue_menu => BlueMenu,
+	   yellow_menu => YellowMenu,
+	   pink_menu => PinkMenu,
+	   menu_map =>
+	       #{ {(?VIEW_WIDTH div 2)-50,(?VIEW_HEIGHT div 2)-50,Rw,Rh} =>
+		      {white,PinkMenu},
+		  {Dx,Dy,Rw,Rh} => 
+		      {red,RedMenu},
+		  {Dx,?VIEW_HEIGHT-Rh-Dy,Rw,Rh} =>
+		      {green,GreenMenu},
+		  {?VIEW_WIDTH-Rw-Dx,Dy,Rw,Rh} => 
+		      {blue,BlueMenu},
+		  {?VIEW_WIDTH-Rw-Dx,?VIEW_HEIGHT-Rh-Dy,Rw,Rh} => 
+		      {yellow,YellowMenu}
+		},
+	   selection => {0,0,0,0}
+	 },
+    {ok, State}.
 
-configure(_Event, State) ->
-    ?verbose("CONFIGURE: ~w\n", [_Event]),
+configure(_Rect, State) ->
+    ?verbose("CONFIGURE: ~w\n", [_Rect]),
     {Sx,_Sy} = epxw:scale(),
     Scale = float(Sx*100),
     Status = io_lib:format("Hello World, Dimension: ~wx~w, Scale: ~.2f%",
@@ -226,9 +229,13 @@ menu({menu,Pos}, State) ->
     {reply, select_menu(Pos, maps:get(menu_map, State)), State}.
     
 %% NOTE! this is overridden by the select fun above
-select({select,Rect}, State) ->
+select({_Phase,Rect}, State) ->
     ?verbose("SELECT: ~w\n", [Rect]),
     State# { selection => Rect }.
+
+motion(_Event={motion,_Button,_Pos}, State) ->
+    ?verbose("MOTION: ~w\n", [_Event]),
+    State.
 
 command(Key, Mod, State) ->
     ?verbose("COMMAND: Key=~w, Mod=~w\n", [Key, Mod]),
