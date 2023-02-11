@@ -36,7 +36,7 @@ main(Width,Height,Rs) when is_list(Rs) ->
     Sy = (Height-65) div 2,
     {ok, Sun} = epx_sprite:create(Game, 65, 65,
 				  [{x,Sx},{y,Sy},{wrap,false}]),
-    Sm = volume(64)*math:pow(2, 33),
+    Sm = volume(64)*math:pow(2, 33/3),
     epx_sprite:set_mass(Game, Sun, Sm),
     circle(Game, Sun, 65, 65, yellow),
     [begin
@@ -58,7 +58,7 @@ main(Width,Height,Rs) when is_list(Rs) ->
 	 Vx = -Sa*V,
 	 Vy = Ca*V,
 	 epx_sprite:set_velocity(Game, S, Vx, Vy),
-	 M = volume(R)*math:pow(2, R),
+	 M = volume(R)*math:pow(2, R/4),
 	 io:format("R=~w, Mass = ~w\n", [R,M]),
 	 epx_sprite:set_mass(Game, S, M)
 	 %% Va = randomi(-15, 15),

@@ -9,6 +9,7 @@
 -behavious(epxw).
 
 -include_lib("epx/include/epx_menu.hrl").
+-include_lib("epx/include/epx_image.hrl").
 
 -export([start/0]).
 -export([init/1,
@@ -22,7 +23,7 @@
 	 focus_in/2,
 	 focus_out/2,
 	 close/1,
-	 draw/3,
+	 draw/3, draw/4,
 	 command/3,
 	 select/2,
 	 motion/2,
@@ -123,6 +124,10 @@ init(_Opts) ->
     PinkMenu = epx_menu:create(MProfile#menu_profile{background_color=pink},
 			       menu(pink)),
 
+    Search = load_icon("outline_search_black_24dp.png"),
+    Copy   = load_icon("outline_content_copy_black_24dp.png"),
+    Home   = load_icon("outline_home_black_24dp.png"),
+
     Rw = 100, Rh = 100, Dx = 3, Dy = 3,
 
     State = 
@@ -134,6 +139,7 @@ init(_Opts) ->
 	   blue_menu => BlueMenu,
 	   yellow_menu => YellowMenu,
 	   pink_menu => PinkMenu,
+	   tools => [Search, Copy, Home],
 	   menu_map =>
 	       #{ {(?VIEW_WIDTH div 2)-50,(?VIEW_HEIGHT div 2)-50,Rw,Rh} =>
 		      {white,PinkMenu},
@@ -149,6 +155,13 @@ init(_Opts) ->
 	   selection => {0,0,0,0}
 	 },
     {ok, State}.
+
+load_icon(Filename) ->
+    Path = filename:join(code:priv_dir(epx_demo), Filename),
+    io:format("load icon [~s]\n", [Path]),
+    {ok, Image} = epx_image:load(Path),
+    hd(Image#epx_image.pixmaps).
+
 
 configure(_Rect, State) ->
     ?verbose("CONFIGURE: ~w\n", [_Rect]),
@@ -224,6 +237,22 @@ draw(Pixels, _Dirty,
 	    epx:draw_rectangle(Pixels, Selection)
     end,
     State.
+
+%% draw tool bar
+draw(left, Pixels, {Xa,Ya,_Wa,_Ha}, State) ->
+    Tools = maps:get(tools, State, []),
+    lists:foreach(
+      fun({I, Png}) ->
+	      [{width,W},{height,H}] = epx:pixmap_info(Png, [width, height]),
+	      epx:pixmap_add_color_area(Png, Pixels, 255, {0,255,0,0},
+					0, 0,
+					Xa+2, Ya+I*32,
+					W, H)
+      end, lists:zip(lists:seq(1,length(Tools)), Tools)),
+    State;
+draw(_, _Pixels, _Area, State) ->
+    State.
+    
 
 menu({menu,Pos}, State) ->
     {reply, select_menu(Pos, maps:get(menu_map, State)), State}.

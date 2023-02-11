@@ -13,7 +13,8 @@
 -export([start/0]).
 
 -compile(export_all).
--include_lib("epx/include/epx_image.hrl").
+%% -include_lib("epx/include/epx_image.hrl").
+-include("sprite.hrl").
 
 -define(NUM_SPRITES, 100).
 
@@ -33,30 +34,62 @@ main(Width,Height,Ws) when is_list(Ws) ->
     {ok,Game} = epx_sprite:start_link([{width,Width},{height,Height},
 				       {color,{255,0,0,255}},
 				       {format, argb},
-				       {interval, 50}]),
+				       {interval, 50},
+				       {damping,0.99}
+				      ]),
+    Dir = code:priv_dir(epx_demo),
+    {ok,Img} = epx_image:load(filename:join(Dir,"astroid.png")),
+    [AstroPixels] = epx_image:pixmaps(Img),
+    N = length(Ws),
     [begin
-	 Side = (W-10)*2 + 1,
-	 X = randomi(0, Width-W-1),
-	 Y = randomi(0, Height-W-1),
-	 {ok, S} = epx_sprite:create(Game, Side, Side,
-				     [{x,X},
-				      {y,Y},
-				      {wrap,false}
-				     ]),
-	 {_,R,G,B} = random_rgb(),
-	 Color = {127,R,G,B},
-	 circle(Game, S, Side, Side, Color),
-	 Vx = randomf(-20, 20),
-	 Vy = randomf(-20, 20),
-	 epx_sprite:set_velocity(Game, S, Vx, Vy),
-	 Radius = W/2,
+	 U = rand:uniform(N),
+	 Anti = U < N div 4,
+	 %% Anti = false,
+	 W1 = if Anti -> 24;
+		 true -> W
+	      end,
+	 Side = (W1-10)*2 + 1,
+	 X = randomi(0, Width-W1-1),
+	 Y = randomi(0, Height-W1-1),
+
+	 Color = 
+	     if Anti -> {255,255,0,0};
+		true -> 
+		     {_,R,G,B} = random_rgb(),
+		     {127,R,G,B}
+	     end,
+	 {Va,Af} = if Anti -> {0.0, fun to_accel/1};
+		      true -> {float(7-rand:uniform(15)), undefined}
+		  end,
+	 Vx = randomf(-10, 10),
+	 Vy = randomf(-10, 10),
+	 Radius = W1/2,
+	 Scale1 = math:pow(2, W1/3),
+	 Scale2 = math:pow(2, W1/2),
 	 Volume = volume(Radius),
-	 M = Volume*math:pow(2, W),
-	 io:format("W=~w, Mass = ~w\n", [W,M]),
-	 epx_sprite:set_mass(Game, S, M)
-	 %% Va = randomi(-15, 15),
-	 %% epx_sprite:set_rotation_velocity(Game, S, Va)
+	 M = if Anti -> -Volume*Scale2;
+		true -> Volume*Scale1
+	     end,
+	 {ok, ID} = epx_sprite:create(Game, Side, Side,
+				      [{x,X},
+				       {y,Y},
+				       {vx,Vx},
+				       {vy,Vy},
+				       {va,Va},
+				       {m, M},
+				       {anglef,Af},
+				       {wrap,false}
+				      ]),
+	 if Anti ->
+		 rectangle(Game, ID, Side, Side, Color);
+	    true ->
+		 epx_sprite:set_image(Game, ID, AstroPixels)
+	 end
      end || W <- Ws].
+
+to_accel(S) ->
+    math:atan2(S#sprite.vy, S#sprite.vx)*(180/math:pi()).
+%%    math:atan2(S#sprite.ax, S#sprite.ay)*(180/math:pi()).
 
 volume(R) ->
     (R*R*R)*math:pi()*4/3.
@@ -82,6 +115,9 @@ circle(Game, S, Width, Height, Color) ->
 		       %% Y = Height div 2,
 		       %% epx:draw_line(Pixmap, 0, Y, Width, Y)
 	       end).
+
+
+    
 
 random_rgb() ->
     { 255, randomi(0,255), randomi(0,255), randomi(0,255) }.

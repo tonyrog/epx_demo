@@ -30,12 +30,12 @@ event(Win, Event) ->
     case Event of
 	close ->
 	    io:format("CLOSE\n", []),
-	    ewindow:destroy(Win),
+	    epx:window_destroy(Win),
 	    ok;	    
 	{key_press, Sym, Mod, Code} ->
 	    io:format("KEY PRESS: ~w  mod=~w, code=~w\n", [Sym,Mod,Code]),
 	    if Sym == $q ->
-		    ewindow:destroy(Win),
+		    epx:window_destroy(Win),
 		    ok;
 	       true ->
 		    loop(Win)

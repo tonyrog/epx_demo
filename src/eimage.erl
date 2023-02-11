@@ -28,14 +28,16 @@ show1(File, Transform) ->
     epx:start(),
     case epx_image:load(File) of
 	{ok,Image} ->
-	    Width  = Image#epx_image.width,
-	    Height = Image#epx_image.height,
+	    [Pixmap|_] = Image#epx_image.pixmaps,
+	    Width  = epx:pixmap_info(Pixmap, width),
+	    Height = epx:pixmap_info(Pixmap, height),
 	    Window = epx:window_create(50, 50, ?WIDTH, ?HEIGHT),
 	    Screen = epx:pixmap_create(Width, Height, argb),
 	    epx:window_attach(Window),
 	    epx:pixmap_attach(Screen),
-	    [Pixmap|_] = Image#epx_image.pixmaps,
-	    transform_loop(Transform, Pixmap, 0, 0, Screen, Window);
+	    Sx = epx:pixmap_info(Screen, width) div 2,
+	    Sy = epx:pixmap_info(Screen, height) div 2,
+	    transform_loop(Transform, Pixmap, Sx, Sy, Screen, Window);
 	Error ->
 	    io:format("Image load error: ~p\n", [Error])
     end.
@@ -44,7 +46,7 @@ transform_loop(Transform, Pixmap, X, Y, Screen, Window) ->
     epx:pixmap_fill(Screen, {255,0,0,0}),
     transform(Transform, Pixmap, X, Y, Screen),
     ScreenWidth  = epx:pixmap_info(Screen, width),
-    ScreenHeight = epx:pixmap_info(Screen, height),    
+    ScreenHeight = epx:pixmap_info(Screen, height),
     epx:pixmap_draw(Screen, Window, 0, 0, 0, 0, ScreenWidth, ScreenHeight),
     case next_transform(Transform) of
 	[] ->
@@ -66,11 +68,11 @@ next_transform([]) -> [].
 transform([], _Pixmap, _X, _Y, _Screen) ->
     ok;
 transform([copy|_], Pixmap, X, Y, Screen) ->
-    Width  = epx:pixmap_info(Pixmap, width),
-    Height = epx:pixmap_info(Pixmap, height),    
-    Cx = X - (Width div 2), 
-    Cy = Y - (Height div 2),
-    epx:pixmap_copy_area(Pixmap, Screen, 0, 0, Cx, Cy, Width, Height, []);
+    Pw  = epx:pixmap_info(Pixmap, width),
+    Ph = epx:pixmap_info(Pixmap, height),
+    Cx = X - (Pw div 2),
+    Cy = Y - (Ph div 2),
+    epx:pixmap_copy_area(Pixmap, Screen, 0, 0, Cx, Cy, Pw, Ph, []);
 transform([lightmap|_], Pixmap, X, Y, Screen) ->
     %% calculate pixmap to light map ARGB => A
     Width  = epx:pixmap_info(Pixmap, width),

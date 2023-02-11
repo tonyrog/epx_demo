@@ -9,6 +9,7 @@
 -module(epx_sprite).
 
 -include_lib("epx/include/epx_image.hrl").
+-include("sprite.hrl").
 
 -behaviour(gen_server).
 
@@ -32,6 +33,7 @@
 -export([set_mass/3]).
 -export([set_rotation_velocity/3]).
 -export([set_rotation/3]).
+-export([set_anglef/3]).
 -export([update_pixels/3]).
 -export([fill/3]).
 -export([set_image_file/3]).
@@ -47,12 +49,14 @@
 	 terminate/2, code_change/3]).
 
 -type unsigned() :: non_neg_integer().
--type sprite_id() :: reference().
+-type sprite_id() :: unsigned().
 -type sprite_option() ::
 	{x, number()} |
 	{y, number()} |
 	{vx, number()} |
 	{vy, number()} |
+	{fx, number()} |
+	{fy, number()} |
 	{ax, number()} |
 	{ay, number()} |
 	{m, number()} |
@@ -68,48 +72,29 @@
 	{format, epx:epx_pixel_format()} |
 	{interval, unsigned()}.
 
--record(sprite,
-	{
-	  id,                          %% uniq id / ref
-	  x      :: float(),           %% center x-position
-	  y      :: float(),           %% center y-position
-	  xo     :: float(),           %% center x-offset in pixmap
-	  yo     :: float(),           %% center y-offset in pixmap
-	  width  :: float(),
-	  height :: float(),
-	  anglef :: function(),        %% angle function
-	  angle  :: float(),           %% rotation angle (degree 0-360)
-	  vx     :: float(),           %% velocity x pixels/s
-	  vy     :: float(),           %% velocity y pixels/s
-	  ax     :: float(),           %% accelertion x (pixels/s)/s
-	  ay     :: float(),           %% accelertion y (pixels/s)/s
-	  m      :: float(),           %% sprite mass
-	  va     :: float(),           %% rotation angular speed degree/s
-	  wrap   :: boolean(),         %% wrap or bounce
-	  rd     :: epx:epx_pixmap(),  %% read pixmap
-	  wr     :: epx:epx_pixmap()   %% write pixmap
-	}).
-
 -record(state,
 	{
-	  win        :: epx:epx_window(),  %% attached window
-	  pixels     :: epx:epx_pixmap(),  %% attached pixels
-	  background :: epx:epx_pixmap(),  %% background pixmap
-	  width      :: unsigned(),        %% width of window
-	  height     :: unsigned(),        %% height of window
-	  sprites,     %% ets(#sprite{})
-	  interval,    %% refresh interval = fps
-	  %% background color / backdrop image
-	  color      :: epx:epx_color(),   %% background color /
-	  backdrop   :: epx:epx_pixmap(),  %% backdrop image
-	  bx         :: float(),           %% backdrop top x
-	  by         :: float(),           %% backdrop top y
-	  bsx        :: float(),           %% backdrop x speed
-	  bsy        :: float(),           %% backdrop y speed
-	  box        :: float(),           %% backdrop x offset
-	  boy        :: float()            %% backdrop y offset
+	 win        :: epx:epx_window(),  %% attached window
+	 screen     :: epx:epx_pixmap(),  %% attached pixels
+	 background :: epx:epx_pixmap(),  %% background pixmap
+	 width      :: unsigned(),        %% width of window
+	 height     :: unsigned(),        %% height of window
+	 alloc = [] :: [unsigned()],      %% id number allocation
+	 sprites,     %% ets(#sprite{})
+	 interval,    %% refresh interval = fps
+	 %% background color / backdrop image
+	 color      :: epx:epx_color(),   %% background color /
+	 backdrop   :: epx:epx_pixmap(),  %% backdrop image
+	 damping    :: float(),           %% global damping factor (0,1)
+	 bx         :: float(),           %% backdrop top x
+	 by         :: float(),           %% backdrop top y
+	 bsx        :: float(),           %% backdrop x speed
+	 bsy        :: float(),           %% backdrop y speed
+	 box        :: float(),           %% backdrop x offset
+	 boy        :: float()            %% backdrop y offset
 	}).
 
+-define(is_id(ID), (is_integer((ID)) andalso ((ID) > 0))).
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -149,101 +134,105 @@ create(Game,W,H,Opts) when is_pid(Game) ->
 %% @doc			   
 %%   Move sprite to position x,y
 %% @end
--spec set_position(Game::pid(),Ref::sprite_id(),
+-spec set_position(Game::pid(),ID::sprite_id(),
 		   X::number(),Y::number()) -> ok.
 
-set_position(Game,Ref,X,Y) when is_pid(Game),
-				is_reference(Ref),
-				is_number(X),
-				is_number(Y) ->
+set_position(Game,ID,X,Y) when is_pid(Game),
+			       ?is_id(ID),
+			       is_number(X),
+			       is_number(Y) ->
     Tab = sprite_table(Game),
-    ets:update_element(Tab, Ref, [{#sprite.x,X},{#sprite.y,Y}]),
+    ets:update_element(Tab, ID, [{#sprite.x,X},{#sprite.y,Y}]),
     ok.
 
 %% set sprite x,y speed
--spec set_velocity(Game::pid(),Ref::sprite_id(),
+-spec set_velocity(Game::pid(),ID::sprite_id(),
 		   Vx::number(),Vy::number()) -> ok.
 
-set_velocity(Game,Ref,Vx,Vy) when is_pid(Game),
-				  is_reference(Ref),
-				  is_number(Vx),
-				  is_number(Vy) ->
+set_velocity(Game,ID,Vx,Vy) when is_pid(Game),
+				 ?is_id(ID),
+				 is_number(Vx),
+				 is_number(Vy) ->
     Tab = sprite_table(Game),
-    ets:update_element(Tab, Ref, [{#sprite.vx,Vx},{#sprite.vy,Vy}]),
+    ets:update_element(Tab, ID, [{#sprite.vx,Vx},{#sprite.vy,Vy}]),
     ok.
 
 %% set sprite x,y acceleration
--spec set_acceleration(Game::pid(),Ref::sprite_id(),
+-spec set_acceleration(Game::pid(),ID::sprite_id(),
 		       Vx::number(),Vy::number()) -> ok.
 
-set_acceleration(Game,Ref,Ax,Ay) when 
+set_acceleration(Game,ID,Ax,Ay) when 
       is_pid(Game),
-      is_reference(Ref),
+      ?is_id(ID),
       is_number(Ax),
       is_number(Ay) ->
     Tab = sprite_table(Game),
-    ets:update_element(Tab, Ref, [{#sprite.ax,Ax},{#sprite.ay,Ay}]),
+    ets:update_element(Tab, ID, [{#sprite.ax,Ax},{#sprite.ay,Ay}]),
     ok.
 
 %% set sprite mass
--spec set_mass(Game::pid(),Ref::sprite_id(),M::number()) -> ok.
+-spec set_mass(Game::pid(),ID::sprite_id(),M::number()) -> ok.
 
-set_mass(Game,Ref,M) when is_pid(Game),
-			  is_reference(Ref),
+set_mass(Game,ID,M) when is_pid(Game),
+			  ?is_id(ID),
 			  is_number(M) ->
     Tab = sprite_table(Game),
-    ets:update_element(Tab, Ref, [{#sprite.m,M}]),
+    ets:update_element(Tab, ID, [{#sprite.m,M}]),
     ok.
 
 
 %% set sprite rotation velocity
 -spec set_rotation_velocity(Game::pid(),Ref::sprite_id(),
 			   Va::number()) -> ok.
-set_rotation_velocity(Game,Ref,Va) when is_pid(Game),
-					is_reference(Ref),
-					is_number(Va) ->
+set_rotation_velocity(Game,ID,Va) when is_pid(Game),
+				       ?is_id(ID),
+				       is_number(Va) ->
     Tab = sprite_table(Game),
-    ets:update_element(Tab, Ref, [{#sprite.va,Va}]),
+    ets:update_element(Tab, ID, [{#sprite.va,Va}]),
     ok.
 
-set_rotation(Game,Ref,Angle) when is_number(Angle) ->
+set_rotation(Game,ID,Angle) when is_number(Angle) ->
     Tab = sprite_table(Game),
-    ets:update_element(Tab, Ref, [{#sprite.angle,Angle}]),
+    ets:update_element(Tab, ID, [{#sprite.angle,Angle}]),
+    ok.
+
+set_anglef(Game,ID,AngleF) when is_function(AngleF, 1) ->
+    Tab = sprite_table(Game),
+    ets:update_element(Tab, ID, [{#sprite.anglef,AngleF}]),
     ok.
 
 %% get sprite x,y speed
--spec get_velocity(Game::pid(),Ref::sprite_id()) -> 
+-spec get_velocity(Game::pid(),ID::sprite_id()) -> 
 			  {Vx::number(),Vy::number()}.
 
-get_velocity(Game,Ref) when is_pid(Game),
-			    is_reference(Ref) ->
+get_velocity(Game,ID) when is_pid(Game),
+			   ?is_id(ID) ->
     Tab = sprite_table(Game),
-    Vx = ets:lookup_element(Tab, Ref, #sprite.vx),
-    Vy = ets:lookup_element(Tab, Ref, #sprite.vy),
+    Vx = ets:lookup_element(Tab, ID, #sprite.vx),
+    Vy = ets:lookup_element(Tab, ID, #sprite.vy),
     {Vx,Vy}.
 
-
-update_pixels(Game, Ref, Fun) ->
+update_pixels(Game, ID, Fun) ->
     Tab = sprite_table(Game),
-    [S] = ets:lookup(Tab, Ref),
+    [S] = ets:lookup(Tab, ID),
     Wr = S#sprite.wr,
     Rd = S#sprite.rd,
     Fun(Wr),  %% user update the Wr pixmap
     %% swap in sprite
-    ets:update_element(Tab, Ref, [{#sprite.rd,Wr},{#sprite.wr,Rd}]),
+    ets:update_element(Tab, ID, [{#sprite.rd,Wr},{#sprite.wr,Rd}]),
     epx:pixmap_copy_to(Wr, Rd).
     
-fill(Game, Ref, Color) ->
-    update_pixels(Game, Ref,
+fill(Game, ID, Color) ->
+    update_pixels(Game, ID,
 		  fun(Pixmap) ->
 			  epx:pixmap_fill(Pixmap, Color)
 		  end).
 
-set_image_file(Game, Ref, File) ->
+set_image_file(Game, ID, File) ->
     case epx_image:load(File) of
 	{ok,Img} ->
 	    [Pixmap] = epx_image:pixmaps(Img),
-	    set_image(Game, Ref, Pixmap);
+	    set_image(Game, ID, Pixmap);
 	Error ->
 	    Error
     end.
@@ -277,22 +266,24 @@ init(Options) ->
     Color  = proplists:get_value(color, Options, ?DEFAULT_COLOR),
     Format = proplists:get_value(format, Options, ?DEFAULT_FORMAT),
     Interval = proplists:get_value(interval, Options, ?DEFAULT_INTERVAL),
-    Pixels = epx:pixmap_create(Width,Height,Format),
-    epx:pixmap_attach(Pixels),
+    Damping  = proplists:get_value(damping, Options, 1.0),
+    Screen   = epx:pixmap_create(Width,Height,Format),
+    epx:pixmap_attach(Screen),
     Background = epx:pixmap_create(Width,Height,Format),
     epx:pixmap_fill(Background, Color),
     Win = epx:window_create(30, 30, Width, Height,
 			    [button_press, button_release]),
     epx:window_attach(Win),
     Sprites = ets:new(sprites, [public,{keypos,#sprite.id}]),
-    State =  #state{ win = Win,
-		     pixels = Pixels,
-		     color  = Color,
-		     interval = Interval,
-		     width = Width, 
-		     height = Height,
-		     sprites = Sprites,
+    State =  #state{ win        = Win,
+		     screen     = Screen,
+		     color      = Color,
+		     interval   = Interval,
+		     width      = Width, 
+		     height     = Height,
+		     sprites    = Sprites,
 		     background = Background,
+		     damping    = Damping,
 		     bx = 0.0,
 		     by = 0.0,
 		     bsx = 0.0,
@@ -322,30 +313,34 @@ handle_call(get_sprites, _From, State) ->
     {reply, {ok,State#state.sprites}, State};
 
 handle_call({create,W,H,Opts},_From,State) ->
-    Format = epx:pixmap_info(State#state.pixels,pixel_format),
+    Format = epx:pixmap_info(State#state.screen,pixel_format),
+    %% Fixme: reuse Rd pixmap when possible (static etc)
     Rd     = epx:pixmap_create(W,H,Format),
     Wr     = epx:pixmap_create(W,H,Format),
-    Ref    = make_ref(),
-    Sprite = #sprite { id = Ref, 
+    {ID,State1} = make_id(State),
+    %% FIXME make matrix version !
+    Sprite = #sprite { id = ID,
 		       x  = proplists:get_value(x, Opts, 0.0),
 		       y  = proplists:get_value(y, Opts, 0.0),
-		       xo = W / 2,
-		       yo = H / 2,
+		       xo = proplists:get_value(xo, Opts, W / 2),
+		       yo = proplists:get_value(yo, Opts, H / 2),
 		       width  = W,
 		       height = H,
 		       vx = proplists:get_value(vx, Opts, 0.0),
 		       vy = proplists:get_value(vy, Opts, 0.0),
+		       fx = proplists:get_value(fx, Opts, 1.0),
+		       fy = proplists:get_value(fy, Opts, 1.0),
 		       ax = proplists:get_value(ax, Opts, 0.0),
 		       ay = proplists:get_value(ay, Opts, 0.0),
-		       m  = proplists:get_value(m, Opts, 0.0),
+		       m  = proplists:get_value(m, Opts,  0.0),
 		       va = proplists:get_value(va, Opts, 0.0),
 		       anglef = proplists:get_value(anglef, Opts, undefined),
 		       angle = proplists:get_value(angle, Opts, 0.0),
 		       wrap = proplists:get_bool(wrap,Opts),
 		       rd = Rd, 
 		       wr = Wr },
-    ets:insert(State#state.sprites, Sprite),
-    {reply, {ok, Ref}, State};
+    ets:insert(State1#state.sprites, Sprite),
+    {reply, {ok, ID}, State1};
     
 handle_call({set_backdrop_image,Pixels}, _From, State) ->
     {reply, ok, State#state { backdrop = Pixels }};
@@ -412,7 +407,7 @@ handle_info(_Info, State) ->
 terminate(_Reason, State) ->
     io:format("terminate: ~p\n", [_Reason]),
     epx:window_detach(State#state.win),
-    epx:pixmap_detach(State#state.pixels),
+    epx:pixmap_detach(State#state.screen),
     ok.
 
 %%--------------------------------------------------------------------
@@ -430,6 +425,15 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
+make_id(State) ->
+    case State#state.alloc of
+	[ID|Alloc] ->
+	    {ID, State#state { alloc = Alloc }};
+	[] ->
+	    ID = ets:info(State#state.sprites, size) + 1,
+	    {ID, State}
+    end.
+
 %% function to cache the sprite table in local process
 sprite_table(Game) ->
     case get({epx_sprites,Game}) of
@@ -444,30 +448,37 @@ sprite_table(Game) ->
 redraw_window(State,T) ->
     epx:pixmap_fill(State#state.background, State#state.color),  %% clear
     Ts  = T / 1000000,
-    Sprites0 = update_sprites(State, Ts),
+    {Center,Sprites0} = update_sprites(State, Ts),
     State1 = update_backdrop(State, Ts),
     Sprites1 = bounce_sprites(Sprites0, State1),
-    redraw_sprites(Sprites1, State1).
+    redraw_sprites(Sprites1, Center, State1).
 
 
-redraw_sprites(Sprites, State) ->
+redraw_sprites(Sprites, {Cx,Cy}, State) ->
+    epx_gc:set_line_width(5),
+    epx_gc:set_foreground_color(white),
+    epx:draw_line(State#state.background,
+		  {Cx-32, Cy}, {Cx+32, Cy}),
+    epx:draw_line(State#state.background,
+		  {Cx, Cy-32}, {Cx, Cy+32}),
+
     Tab = State#state.sprites,
     [
      begin
+	 #sprite{x=X,y=Y,vx=Vx,vy=Vy,angle=A} = Si,
 	 ets:update_element(Tab, Si#sprite.id,
-			    [{#sprite.x,Si#sprite.x},
-			     {#sprite.y,Si#sprite.y},
-			     {#sprite.vx,Si#sprite.vx},
-			     {#sprite.vy,Si#sprite.vy},
-			     {#sprite.angle, Si#sprite.angle}]),
-	 Angle = radians(Si#sprite.angle),
+			    [{#sprite.x,X},
+			     {#sprite.y,Y},
+			     {#sprite.vx,Vx},
+			     {#sprite.vy,Vy},
+			     {#sprite.angle, A}]),
+	 Angle = radians(A),
 	 if Angle == 0 ->
 		 epx:pixmap_copy_area(
 		   Si#sprite.rd,
 		   State#state.background,
 		   0, 0, 
-		   Si#sprite.x, Si#sprite.y,
-		   Si#sprite.width, Si#sprite.height,
+		   X, Y, Si#sprite.width, Si#sprite.height,
 		   [blend]);
 	    true ->
 		 epx:pixmap_rotate_area(
@@ -477,8 +488,8 @@ redraw_sprites(Sprites, State) ->
 		   0, 0,
 		   Si#sprite.xo,
 		   Si#sprite.yo,
-		   Si#sprite.x + Si#sprite.xo,
-		   Si#sprite.y + Si#sprite.yo,
+		   X + Si#sprite.xo,
+		   Y + Si#sprite.yo,
 		   Si#sprite.width, Si#sprite.height,
 		   [blend])
 	 end
@@ -492,7 +503,7 @@ bounce_sprites(Sprites, State) ->
     WX0 = 0, WX1 = Width-1,
     WY0 = 0, WY1 = Height-1,
 
-    %% limit the sprites againt walls (fixme make walls dynamic)
+    %% limit the sprites against walls (fixme make walls dynamic)
     [begin
 	 SX0 = Si#sprite.x, SX1 = Si#sprite.x + Si#sprite.width - 1,
 	 SY0 = Si#sprite.y, SY1 = Si#sprite.y + Si#sprite.height - 1,
@@ -539,30 +550,44 @@ bounce_sprites(Sprites, State) ->
 %% update acceleration, velocity, position and rotation
 update_sprites(State, Ts) ->
     Tab = State#state.sprites,
-    ets:foldl(
-      fun(Si,Acc) ->
-	      {Ax,Ay} =
-		  if Si#sprite.m /= 0 ->
-			  ets:foldl(fun(Sj,F) -> calc_gravity(F,Si,Sj) end,
-				    {0,0}, Tab);
-		     true ->
-			  {Si#sprite.ax, Si#sprite.ay}
-		  end,
-	      Vx = Si#sprite.vx + Ax*Ts,
-	      Vy = Si#sprite.vy + Ay*Ts,
+    %% first calculate the total mass and mass center
+    D = State#state.damping,
+    case ets:tab2list(Tab) of
+	[] -> {{0.0,0.0},[]};
+	Sprites ->
+	    M = total_mass(Sprites),
+	    C = mass_center(Sprites),
+	    Sprites1 = calc_accel(Sprites),
+	    {scale(1/M, C),
+	     [begin
+		  #sprite{x=X,y=Y,vx=Vx,vy=Vy,fx=Fx,fy=Fy,ax=Ax,ay=Ay} = Si,
+		  Vx1 = (Vx + Ax*Ts)*D*Fx,
+		  Vy1 = (Vy + Ay*Ts)*D*Fy,
 		  
-	      X = Si#sprite.x + Vx*Ts,
-	      Y = Si#sprite.y + Vy*Ts,
+		  X1 = X + Vx1*Ts,
+		  Y1 = Y + Vy1*Ts,
+		  
+		  Av = if is_function(Si#sprite.anglef) ->
+			       (Si#sprite.anglef)(Si);
+			  true ->
+			       Si#sprite.angle
+		       end,
+		  A0 = Av + Si#sprite.va*Ts,
+		  A1 = math2:fmod(A0, 360),
+		  Si#sprite{x=X1,y=Y1,vx=Vx1,vy=Vy1,angle=A1}
+	      end || Si <- Sprites1]}
+    end.
 
-	      Av = if is_function(Si#sprite.anglef) ->
-			   (Si#sprite.anglef)(Si);
-		      true ->
-			   Si#sprite.angle
-		   end,
-	      A0 = Av + Si#sprite.va * Ts,
-	      A = math2:fmod(A0, 360),
-	      [Si#sprite{x=X,y=Y,vx=Vx,vy=Vy,ax=Ax,ay=Ay,angle=A} | Acc]
-      end, [], State#state.sprites).
+total_mass([Si|Sprites]) ->
+    Si#sprite.m + total_mass(Sprites);
+total_mass([]) ->
+    0.0.
+
+mass_center([#sprite{x=X,y=Y,xo=Xo,yo=Yo,m=M}]) ->
+    {M*(X+Xo), M*(Y+Yo)};
+mass_center([#sprite{x=X,y=Y,xo=Xo,yo=Yo,m=M}|Sprites]) ->
+    add({M*(X+Xo), M*(Y+Yo)}, mass_center(Sprites)).
+
 %%
 %% calculate crossing point between:
 %% P(t) =  ((X1-X0)*t + X0, (Y1-Y0)*t + Y0)
@@ -586,22 +611,73 @@ line_intersect(X0,Y0,X1,Y1, X2,Y2,X3,Y3) ->
 	    end
     end.
 
+%%
+%% Plain simple quadratic gravity calculation
+%%
+calc_accel(Sprites) ->
+    G = calc_gravity_(Sprites, #{}),  %% get all Fij i<j (kind of)
+    Indices = [S#sprite.id || S <- Sprites],
+    calc_accel_(Sprites, [], Indices, G).
+
+calc_accel_([S=#sprite{id=I}|Sprites], Acc, Indices, G) ->
+    {Ax,Ay} = calc_accel_i(Indices, I, {0.0,0.0}, G),
+    %% io:format("~w: accel=~g,~g\n", [I, Ax, Ay]),
+    calc_accel_(Sprites, [S#sprite{ax=Ax,ay=Ay}|Acc], Indices, G);
+calc_accel_([], Acc, _Indices, _G) ->
+    Acc.
+
+calc_accel_i([I|Is], I, A, G) -> %% =0
+    calc_accel_i(Is, I, A, G);
+calc_accel_i([J|Is], I, A, G) ->
+    case maps:find({I,J}, G) of
+	error ->
+	    {Fij,Nx,Ny} = maps:get({J,I},G),
+	    calc_accel_i(Is, I, add({-Fij*Nx,-Fij*Ny}, A), G);
+	{ok,{Fij,Nx,Ny}} ->
+	    calc_accel_i(Is, I, add({Fij*Nx,Fij*Ny}, A), G)
+    end;
+calc_accel_i([], _I, A, _G) ->
+    A.
+    
+%% calculate Fij = Fji = -G*Mi*Mj/Dij^2
+calc_gravity_([#sprite{id=I,x=Xi,y=Yi,xo=Xoi,yo=Yoi,m=Mi}|Sprites], G) ->
+    G1 = calc_gravity_(Sprites,I,Xi+Xoi,Yi+Yoi,Mi,G),
+    calc_gravity_(Sprites, G1);
+calc_gravity_([], G) ->
+    G.
+
+calc_gravity_([#sprite{id=J,x=Xj,y=Yj,xo=Xoj,yo=Yoj,m=Mj}|Sprites],I,X,Y,M,G) ->
+    Dx = X-(Xj+Xoj),
+    Dy = Y-(Yj+Yoj),
+    D = max(max(Xoj,Yoj),math:sqrt(Dx*Dx + Dy*Dy)),
+    if abs(D) < 0.01 ->
+	    calc_gravity_(Sprites,I,X,Y,M,G#{ {I,J} => {0.0,0.0,0.0}});
+       true ->
+	    Nx = Dx/D,
+	    Ny = Dy/D,
+	    Fij = (-?G*M*Mj)/(D*D),
+	    calc_gravity_(Sprites,I,X,Y,M,G#{ {I,J} => {Fij,Nx,Ny}})
+    end;
+calc_gravity_([],_I,_X,_Y,_M,G) ->
+    G.
+
+
 %% newton mass equation F1 = F2 = G*(M1*M2)/R^2, a = F/m
-calc_gravity(F,#sprite{id=ID},#sprite{id=ID}) ->
-    F;
-calc_gravity(_F={Fx,Fy},
-	     #sprite{x=Xi,y=Yi,xo=Xoi,yo=Yoi}, 
-	     #sprite{x=Xj,y=Yj,xo=Xoj,yo=Yoj,m=Mj}) ->
-    Dx = (Xi+Xoi)-(Xj+Xoj),
-    Dy = (Yi+Yoi)-(Yj+Yoj),
-    R0 = math:sqrt(Dx*Dx + Dy*Dy),
-    %% disallow that radius is too small, fixme make better 
-    Wij = max(Xoi,Xoj),
-    R  = max(R0, Wij),
-    Nx = Dx/R,
-    Ny = Dy/R,
-    Fij = (-?G*Mj)/(R*R),
-    {Fx+Fij*Nx, Fy+Fij*Ny}.
+%% calc_gravity(F,#sprite{id=ID},#sprite{id=ID}) ->
+%%     F;
+%% calc_gravity(_F={Fx,Fy},
+%% 	     #sprite{x=Xi,y=Yi,xo=Xoi,yo=Yoi}, 
+%% 	     #sprite{x=Xj,y=Yj,xo=Xoj,yo=Yoj,m=Mj}) ->
+%%     Dx = (Xi+Xoi)-(Xj+Xoj),
+%%     Dy = (Yi+Yoi)-(Yj+Yoj),
+%%     R0 = math:sqrt(Dx*Dx + Dy*Dy),
+%%     %% disallow that distance is too small, fixme make better 
+%%     Wij = max(Xoi,Xoj),
+%%     R  = max(R0, Wij),
+%%     Nx = Dx/R,
+%%     Ny = Dy/R,
+%%     Fij = (-?G*Mj)/(R*R),
+%%     {Fx+Fij*Nx, Fy+Fij*Ny}.
 
 
 %% update backdrop image
@@ -620,8 +696,8 @@ update_backdrop(State, Ts) ->
     
 
 update_window(State) ->
-    epx:pixmap_copy_to(State#state.background, State#state.pixels),
-    epx:pixmap_draw(State#state.pixels, 
+    epx:pixmap_copy_to(State#state.background, State#state.screen),
+    epx:pixmap_draw(State#state.screen, 
 		    State#state.win, 0, 0, 0, 0, 
 		    State#state.width, 
 		    State#state.height).
@@ -665,6 +741,25 @@ time_us() ->
     {Ms,S,Us} = os:timestamp(),
     ((Ms*1000000 + S)*1000000) + Us.
 
+scale(S, {X, Y}) ->
+    {S*X, S*Y}.
+
+subtract({X1,Y1}, {X0,Y0}) ->
+    {X1-X0, Y1-Y0}.
+
+add({X1,Y1}, {X0,Y0}) ->
+    {X1+X0, Y1+Y0}.
+
+add({X0,Y0}, X1,Y1) ->
+    {X1+X0, Y1+Y0};
+add(X1,Y1, {X0,Y0}) ->
+    {X1+X0, Y1+Y0}.
+
+add(X1,Y1, X0,Y0) ->
+    {X1+X0, Y1+Y0}.    
+
+distance({X1,Y1},{X2,Y2}) ->
+    distance(X1,Y1,X2,Y2).
 distance(X1,Y1,X2,Y2) ->
     Dx = X2-X1,
     Dy = Y2-Y1,
