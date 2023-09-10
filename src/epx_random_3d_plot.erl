@@ -176,7 +176,7 @@ start(W, H, _N) ->
 					  key_press,resize]),
     epx:window_attach(Window),
     B = epx_backend:default(),
-    [{width,BW},{height,BH}] = epx:backend_info(B,[width,height]),
+    [{width,_BW},{height,_BH}] = epx:backend_info(B,[width,height]),
     epx:window_adjust(Window, [{min_width,W div 2},{max_width,2*W},
 			       {min_height,H div 2},{max_height,2*H}]),
     Pixmap = epx:pixmap_create(W,H,argb),

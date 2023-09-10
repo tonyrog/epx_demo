@@ -720,9 +720,9 @@ s_poly_c(Ps) ->
     ?assert(verify_poly_convex(Ps1), none_convex),
     %% generate Left and Right segment lists
     PsI = lists:zipwith(fun({X,Y},I) -> {{X,Y},I} end, Ps1, lists:seq(1,N)),
-    {Min,I} = hd(lists:sort(fun({P,_},{Q,_}) -> point_less(P,Q) end, PsI)),
+    {_Min,I} = hd(lists:sort(fun({P,_},{Q,_}) -> point_less(P,Q) end, PsI)),
     %% io:format("Min: ~p (~w)\n", [Min,I]),    
-    {Max,J} = hd(lists:sort(fun({P,_},{Q,_}) -> point_greater(P,Q) end, PsI)),
+    {_Max,J} = hd(lists:sort(fun({P,_},{Q,_}) -> point_greater(P,Q) end, PsI)),
     %% io:format("Max: ~p (~w)\n", [Max,J]),
     %% Generate Left and Right segment until I and J meet
     {L,R} = s_poly(list_to_tuple(Ps1), I, J),
@@ -958,8 +958,8 @@ coord(#line  { x=X, y=Y, pt=Pt}) -> Pt(X, Y);
 coord(#round { x=X, y=Y, pt=Pt}) -> Pt(X, Y).
 
 %% Return anti alias alignment
-alias(#line  { ap=Ap }) -> Ap();
-alias(#round { ap=Ap }) -> Ap().
+aalias(#line  { ap=Ap }) -> Ap();
+aalias(#round { ap=Ap }) -> Ap().
 
 %% Get internal x coordinate
 segment_x(#line { x=X }) -> X;
@@ -1174,7 +1174,7 @@ plot(S,F,Color) ->
 
 plota(S,F,Color) ->
     {X,Y} = coord(F),
-    {Sx,Sy} = alias(F),
+    {Sx,Sy} = aalias(F),
     Pix = S#s.pix,
     if Sx==0, Sy==0 ->
 	    epixmap:put_pixel(S#s.pix,X,Y,Color,[blend]);

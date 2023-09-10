@@ -585,7 +585,7 @@ update_sprites(State, Ts) ->
 			       Si#sprite.angle
 		       end,
 		  A0 = Av + Si#sprite.va*Ts,
-		  A1 = math2:fmod(A0, 360),
+		  A1 = fmod(A0, 360),
 		  Si#sprite{x=X1,y=Y1,vx=Vx1,vy=Vy1,angle=A1}
 	      end || Si <- Sprites1]}
     end.
@@ -797,8 +797,15 @@ clamp(X, _Min, _Max) -> X.
 
 wrap(X, Min, Max) when X > Max ->
     L = (Max-Min)+1,
-    math2:fmod(X-Min, L) + Min;
+    fmod(X-Min, L) + Min;
 wrap(X, Min, Max) when X < Min ->
     L = (Max-Min)+1,
-    Max - math2:fmod(Min-X, L);
+    Max - fmod(Min-X, L);
 wrap(X, _Min, _Max) -> X.
+
+fmod(A, B) when is_number(A), is_number(B), B =/= 0 ->
+    AB = abs(A / B),
+    C = (AB - trunc(AB))*abs(B),
+    if A < 0 -> -C;
+       true -> C
+    end.

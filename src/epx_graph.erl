@@ -144,13 +144,13 @@ xbus(Pattern) ->
 		 {probe,
 		  fun(_) ->
 			  case xbus:read(Topic) of
-			      [{_, Value, Ts}] ->
+			      [{_, Value, _Ts}] ->
 				  [{Topic, Value}];
 			      _ ->
 				  []
 			  end
 		  end}
-		]} || {Topic,Meta} <- xbus:topics(Pattern)],
+		]} || {Topic,_Meta} <- xbus:topics(Pattern)],
     start_link(Xbus).
     
 %%%===================================================================

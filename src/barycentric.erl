@@ -47,13 +47,15 @@
 
 -define(SCALE, 1).
 
--define(PUT_PIXEL(Pixmap,X,Y,Color),
-	if ?SCALE =:= 1 ->
-		epx:pixmap_put_pixel((Pixmap),(X),(Y),(Color),[blend]);
-	   true ->
-		epx:pixmap_fill_area((Pixmap),?SCALE*(X),?SCALE*(Y),
-				     ?SCALE,?SCALE,(Color),[blend])
-	end).
+-if(?SCALE == 1).
+put_pixel(Pixmap,X,Y,Color) ->
+    epx:pixmap_put_pixel((Pixmap),(X),(Y),(Color),[blend]).
+-else.
+put_pixel(Pixmap,X,Y,Color) ->
+    epx:pixmap_fill_area((Pixmap),?SCALE*(X),?SCALE*(Y),
+			 ?SCALE,?SCALE,(Color),[blend]).
+-endif.
+
 
 %%
 %% We should be able to run several triangles at one!!!
@@ -193,9 +195,9 @@ plot(Pixmap,X,Y,S0,T0,K,Tri) ->
 		    Color1 = rgb8(add(add(mult(1-(S+T),C0),
 					  mult(S,C1)),
 				      mult(T,C2))),
-		    ?PUT_PIXEL(Pixmap,X,Y,Color1);
+		    put_pixel(Pixmap,X,Y,Color1);
 		Color ->
-		    ?PUT_PIXEL(Pixmap,X,Y,Color)
+		    put_pixel(Pixmap,X,Y,Color)
 	    end;
        Tri#triangle.dim =:= 3 ->
 	    S = S0/K, T = T0/K,
@@ -203,7 +205,7 @@ plot(Pixmap,X,Y,S0,T0,K,Tri) ->
 	    Z = 1/(IZ0*(1-(S+T)) + IZ1*S + IZ2*T),
 	    G = (Z - Tri#triangle.minz) / (Tri#triangle.dz),
 	    Color1 = rgb8({G,G,G}),
-	    ?PUT_PIXEL(Pixmap,X,Y,Color1)
+	    put_pixel(Pixmap,X,Y,Color1)
     end.
 
 
@@ -229,15 +231,19 @@ add({X0,Y0,Z0},{X1,Y1,Z1}) ->  {X0+X1,Y0+Y1,Z0+Z1};
 add(A,{X1,Y1,Z1}) ->  {A+X1,A+Y1,A+Z1};
 add({X0,Y0,Z0},B) ->  {X0+B,Y0+B,Z0+B}.
 
+-if(not_used).
 sub({X0,Y0},{X1,Y1}) ->  {X0-X1,Y0-Y1};
 sub(A,{X1,Y1}) ->  {A-X1,A-Y1};
 sub({X0,Y0},B) ->  {X0-B,Y0-B};
 sub({X0,Y0,Z0},{X1,Y1,Z1}) ->  {X0-X1,Y0-Y1,Z0-Z1};
 sub(A,{X1,Y1,Z1}) ->  {A-X1,A-Y1,A-Z1};
 sub({X0,Y0,Z0},B) ->  {X0-B,Y0-B,Z0-B}.
-     
+-endif.     
+
 rgb8({R,G,B}) -> {trunc(R*255),trunc(G*255),trunc(B*255)}.
 
+-if(not_used).
 sign(X) when X < 0 -> -1;
 sign(X) when X > 0 -> 1;
 sign(_) -> 0.
+-endif.
