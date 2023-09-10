@@ -39,8 +39,8 @@
 -define(USE_OFF_SCREEN, true).
 -define(USE_EXPOSURE, true).
 
--define(debug(F,A), ok).
-%% -define(debug(F,A), io:format((F),(A))).
+%%-define(debug(F,A), ok).
+-define(debug(F,A), io:format((F),(A))).
 
 
 start() ->
@@ -538,13 +538,29 @@ calc_local(D,[W,H]) -> %% disabled right now
     %% ?debug("max_work_group_size = ~w\n", [MaxWorkGroupSize]),
     {ok,[LW,LH|_]} = cl:get_device_info(D, max_work_item_sizes),
     ?debug("1.local = ~w,~w\n", [LW,LH]),
-    LW1 = imath:gcd(LW, W),
-    LH1 = imath:gcd(LH, H),
+    LW1 = gcd(LW, W),
+    LH1 = gcd(LH, H),
     ?debug("2.local = ~w,~w\n", [LW1,LH1]),
     {LW2,LH2} = scale_down_work_item_sizes(LW1,LH1,MaxWorkGroupSize),
     ?debug("3.local = ~w,~w\n", [LW2,LH2]),
     %% Local1 = 1,
     [LW2,LH2].
+
+
+%%
+%% Normal gcd - always return non negative value
+%%
+gcd(R, Q) when is_integer(R), is_integer(Q) ->
+    R1 = abs(R),
+    Q1 = abs(Q),
+    if Q1 < R1 -> gcd_(Q1,R1);
+       true -> gcd_(R1,Q1)
+    end.
+
+gcd_(0, Q) -> Q;
+gcd_(R, Q) ->
+    gcd_(Q rem R, R).
+
 
 scale_down_work_item_sizes(1,  H,  Max) -> {1,min(H,Max)};
 scale_down_work_item_sizes(W,  1,  Max) -> {min(W,Max),1};
