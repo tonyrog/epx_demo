@@ -63,7 +63,8 @@
 	{va, number()} |
 	{anglef, function() | undefined} |
 	{angle, number()} |
-	{wrap, boolean()}.
+	{wrap, boolean()} |
+	{pixels, epx:epx_pixmap()} .
 
 -type option() ::
 	{width, unsigned()} |
@@ -215,12 +216,16 @@ get_velocity(Game,ID) when is_pid(Game),
 update_pixels(Game, ID, Fun) ->
     Tab = sprite_table(Game),
     [S] = ets:lookup(Tab, ID),
-    Wr = S#sprite.wr,
-    Rd = S#sprite.rd,
-    Fun(Wr),  %% user update the Wr pixmap
-    %% swap in sprite
-    ets:update_element(Tab, ID, [{#sprite.rd,Wr},{#sprite.wr,Rd}]),
-    epx:pixmap_copy_to(Wr, Rd).
+    case S#sprite.wr of
+	undefined ->
+	    error;   %% can not write to static map
+	Wr ->
+	    Rd = S#sprite.rd,
+	    Fun(Wr),  %% user update the Wr pixmap
+	    %% swap in sprite
+	    ets:update_element(Tab, ID, [{#sprite.rd,Wr},{#sprite.wr,Rd}]),
+	    epx:pixmap_copy_to(Wr, Rd)
+    end.
     
 fill(Game, ID, Color) ->
     update_pixels(Game, ID,
@@ -241,7 +246,7 @@ set_image(Game, Ref, Image) ->
     update_pixels(Game, Ref,
 		  fun(Pixmap) ->
 			  epx:pixmap_scale(Image, Pixmap,
-					   epx:pixmap_info(Pixmap, width),
+					   epx:pixmap_info(Pixmap,width),
 					   epx:pixmap_info(Pixmap,height))
 		  end).
 
@@ -314,11 +319,18 @@ handle_call(get_sprites, _From, State) ->
 
 handle_call({create,W,H,Opts},_From,State) ->
     Format = epx:pixmap_info(State#state.screen,pixel_format),
-    %% Fixme: reuse Rd pixmap when possible (static etc)
-    Rd     = epx:pixmap_create(W,H,Format),
-    Wr     = epx:pixmap_create(W,H,Format),
+    {Rd,Wr} =
+	case proplists:get_value(pixels, Opts, undefined) of
+	    undefined ->
+		{epx:pixmap_create(W,H,Format),
+		 epx:pixmap_create(W,H,Format)};
+	    Pixels ->
+		{Pixels, undefined}
+	end,
     {ID,State1} = make_id(State),
     %% FIXME make matrix version !
+    io:format("create ~w: Rd = ~p\n", [ID, Rd]),
+
     Sprite = #sprite { id = ID,
 		       x  = proplists:get_value(x, Opts, 0.0),
 		       y  = proplists:get_value(y, Opts, 0.0),
