@@ -196,17 +196,21 @@ loop(S) ->
 
 	{epx_event,_Win,{key_press, Sym, _Mod, _Code}} ->
 	    case Sym of
-		left  ->  
+		left ->
 		    S1 = move(S, +(S#s.w div 3), 0),
+		    flush_key_press(S#s.win, Sym),
 		    loop(S1);
 		right ->   
 		    S1 = move(S, -(S#s.w div 3), 0),
+		    flush_key_press(S#s.win, Sym),
 		    loop(S1);
 		up ->      
 		    S1 = move(S, 0, -(S#s.h div 3)),
+		    flush_key_press(S#s.win, Sym),
 		    loop(S1);
 		down ->
 		    S1 = move(S, 0, +(S#s.h div 3)),
+		    flush_key_press(S#s.win, Sym),
 		    loop(S1);
 		$+ ->
 		    R = S#s.w / S#s.h,
@@ -217,6 +221,7 @@ loop(S) ->
 		    Y1 = S#s.h-Step,
 		    P = new_view(S#s.view,rectangle(X0,Y0,X1,Y1),R),
 		    draw(S#s.win, S#s.pix, P, S),
+		    flush_key_press(S#s.win, Sym),
 		    loop(S#s { view=P });
 
 		$- ->
@@ -228,6 +233,7 @@ loop(S) ->
 		    Y1 = S#s.h-Step,
 		    P = new_view(S#s.view,rectangle(X0,Y0,X1,Y1),R),
 		    draw(S#s.win, S#s.pix, P, S),
+		    flush_key_press(S#s.win, Sym),
 		    loop(S#s { view=P });
 		
 		27   ->
@@ -236,10 +242,12 @@ loop(S) ->
 			    P = view0(S#s.w, S#s.h, S#s.opts),
 			    S1 = S#s { view=P, ps=[] },
 			    draw(S#s.win, S#s.pix, P,  S1),
+			    flush_key_press(S#s.win, Sym),
 			    loop(S1);
 			[P|Ps] ->
 			    S1 = S#s { view=P, ps=Ps },
 			    draw(S#s.win, S#s.pix, P,  S1),
+			    flush_key_press(S#s.win, Sym),
 			    loop(S1)
 		    end;
 		_Key ->
@@ -247,12 +255,26 @@ loop(S) ->
 		    loop(S)
 	    end;
 
+	{epx_event,_Win,{key_release, _Sym, _Mod, _Code}} ->
+	    %% ignore for now
+	    loop(S);
+
 	redraw ->
 	    draw(S#s.win,S#s.pix,S#s.view,S),
 	    loop(S);
 	_Other ->
 	    %% io:format("Got: ~p\n", [_Other]),
 	    loop(S)
+    end.
+
+flush_key_press(Win, Sym) ->
+    receive
+	{epx_event,Win,{key_press, Sym, _Mod, _Code}} ->
+	    flush_key_press(Win, Sym);
+	{epx_event,_Win,{key_release, Sym, _Mod, _Code}} ->
+	    flush_key_press(Win, Sym)
+    after 0 ->
+	    ok
     end.
 
 flush_configure(Win, Rect) ->
