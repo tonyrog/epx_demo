@@ -13,6 +13,7 @@ start() ->
     start([key_press, key_release]).
 
 start(EventMask) ->
+    epx:start(),
     Win = epx:window_create(50, 50, 100, 100, EventMask),
     epx:window_attach(Win),
     loop(Win).
@@ -30,12 +31,12 @@ event(Win, Event) ->
     case Event of
 	close ->
 	    io:format("CLOSE\n", []),
-	    epx:window_destroy(Win),
+	    epx:window_detach(Win),
 	    ok;	    
 	{key_press, Sym, Mod, Code} ->
 	    io:format("KEY PRESS: ~w  mod=~w, code=~w\n", [Sym,Mod,Code]),
 	    if Sym == $q ->
-		    epx:window_destroy(Win),
+		    epx:window_detach(Win),
 		    ok;
 	       true ->
 		    loop(Win)
@@ -51,82 +52,87 @@ event(Win, Event) ->
 	    loop(Win);
 	{motion, Button, Where} ->
 	    io:format("MOTION: ~w where=~w\n", [Button, Where]),
+	    loop(Win);
+	Other ->
+	    io:format("OTHER: ~w\n", [Other]),
 	    loop(Win)
     end.
 
 text_demo() ->
-    text_demo("timBI18.efnt").
+    text_demo("\"Hello World.\"").
 
-text_demo(Filename) ->
-    text_demo(Filename, "\"Hello World.\"").
-
-text_demo(Filename, Text) ->
-    {ok,Win} = epx:window_create(50, 50, 320, 240, []),
+text_demo(Text) ->
+    epx:start(),
+    Win = epx:window_create(50, 50, 320, 240, []),
     epx:window_attach(Win),
-    {ok,Pic} = epx:pixmap_create(320,240),
-    epx:pixmap_fill(Pic, {80,80,80}),
-    epx:pixmap_attach(Pic),
-    {ok,Font} = epx_font:open(Filename),
-    ok = epx_font:map(Font),
-    {ok,FInfo} = epx_font:info(Font),
+    Pix = epx:pixmap_create(320,240),
+    epx:pixmap_fill(Pix, {80,80,80}),
+    epx:pixmap_attach(Pix),
+    {ok,Font} = epx_font:match([{name,"Times"},{size,18}]),
+    FInfo = epx_font:info(Font),
     io:format("Font Info = ~p\n", [FInfo]),
     epx_gc:set_font(Font),
     epx_gc:set_foreground_color({0,255,0,0}),
     
-    epx_font:draw_string(Pic, 10, FInfo#epx_font_info.ascent, Text),
-    epx:pixmap_draw(Pic, Win, 0, 0, 0, 0, 320, 240),
+    epx:draw_string(Pix, 10, FInfo#epx_font_info.ascent, Text),
+    epx:pixmap_draw(Pix, Win, 0, 0, 0, 0, 320, 240),
     receive
-	{eevent, Win, close} ->
-	    ewindow:destroy(Pic),
-	    ewindow:destroy(Win),
+	{epx_event, Win, close} ->
+	    epx:pixmap_detach(Pix),
+	    epx:window_detach(Win),
 	    ok
     end.
     
+-define(LDEMO_WIDTH,  1000).
+-define(LDEMO_HEIGHT, 500).
 
 line_demo() ->
-    Win = epx:window_create(50, 50, 200, 100, []),
+    epx:start(),
+    Win = epx:window_create(50, 50, ?LDEMO_WIDTH, ?LDEMO_HEIGHT, []),
     epx:window_attach(Win),
-    Pic = epx:pixmap_create(200,100),
-    epx:pixmap_attach(Pic),
+    Pix = epx:pixmap_create(?LDEMO_WIDTH, ?LDEMO_HEIGHT),
+    epx:pixmap_attach(Pix),
     Gc = epx:gc_create(),
-    draw_rot_loop(Pic,Win,Gc,0,5000),
-    epx:pixmap_draw(Pic, Win, 0, 0, 0, 0, 200, 100),
+    draw_rot_loop(Pix,Win,Gc,0,5000),
+    epx:pixmap_draw(Pix, Win, 0, 0, 0, 0, ?LDEMO_WIDTH, ?LDEMO_HEIGHT),
     receive
 	{epx_event, Win, close} ->
 	    io:format("CLOSE\n", []),
-	    epx:pixmap_detach(Pic),
+	    epx:pixmap_detach(Pix),
 	    epx:window_detach(Win),
 	    ok
     end.
 
-draw_rot_loop(_Pic, _Win, _Gc, _A, 0) ->
+draw_rot_loop(_Pix, _Win, _Gc, _A, 0) ->
     ok;
-draw_rot_loop(Pic, Win, Gc, A, I) ->
+draw_rot_loop(Pix, Win, Gc, A, I) ->
     Fg = (A rem 200) + 40,
     Bg = (A rem 200),
-    epx:pixmap_fill(Pic, {255,192,Fg,Fg}),
-    epx:gc_set_foreground_color(Gc, {255,Bg,Bg,Bg}),
-    draw_rot(Pic,Gc,A rem 360),
-    epx:pixmap_draw(Pic, Win, 0, 0, 0, 0, 200, 100),
-    draw_rot_loop(Pic,Win,Gc,A+1,I-1).
+    epx:pixmap_fill(Pix, {255,192,Fg,Fg}),
+    epx_gc:set_foreground_color(Gc, {255,Bg,Bg,Bg}),
+    draw_rot(Pix,Gc,A rem 360),
+    epx:pixmap_draw(Pix, Win, 0, 0, 0, 0, ?LDEMO_WIDTH, ?LDEMO_HEIGHT),
+    draw_rot_loop(Pix,Win,Gc,A+1,I-1).
 
 
-draw_rot(Pic,Gc) ->
-    draw_rot(Pic,Gc,0).
+draw_rot(Pix,Gc) ->
+    draw_rot(Pix,Gc,0).
 
-draw_rot(Pic,Gc,A) ->
-    draw_rot(Pic,Gc,A,360+A,10).
+draw_rot(Pix,Gc,A) ->
+    draw_rot(Pix,Gc,A,360+A,10).
 
-draw_rot(_Pic,_Gc,A,Max,_Step) when A >= Max ->
+draw_rot(_Pix,_Gc,A,Max,_Step) when A >= Max ->
     ok;
-draw_rot(Pic,Gc,A, Max,Step) ->
+draw_rot(Pix,Gc,A, Max,Step) ->
     Ar = A*math:pi()/180,
     X = math:cos(Ar),
     Y = math:sin(Ar),
-    epx:gc_set_line_style(Gc, solid),
-    epx:pixmap_draw_line(Pic,Gc, 50, 50, 
-			 trunc(50*X+50), trunc(50*Y+50)),
-    epx:set_line_style(Gc, aalias),
-    epx:pixmap_draw_line(Pic, Gc, 150, 50, 
-			 trunc(50*X+150), trunc(50*Y+50)),
-    draw_rot(Pic,Gc,A+Step,Max,Step).
+    epx_gc:set_line_style(Gc, solid),
+    X0 = ?LDEMO_WIDTH / 4,
+    Y0 = ?LDEMO_HEIGHT / 2,
+    epx:pixmap_draw_line(Pix,Gc, X0, Y0, 
+			 trunc(X0*X+X0), trunc(Y0*Y+Y0)),
+    epx_gc:set_line_style(Gc, aalias),
+    epx:pixmap_draw_line(Pix, Gc, 3*X0, Y0, 
+			 trunc(X0*X+3*X0), trunc(Y0*Y+Y0)),
+    draw_rot(Pix,Gc,A+Step,Max,Step).

@@ -1073,7 +1073,7 @@ step_y(S,Y0,[Segment|SegmentTail]) ->
 	    Segment1 = step(Segment),
 	    {_,Y1} = coord(Segment1),
 	    if Y1 == Y0 ->
-		    %% epixmap:draw_point(S#s.pix, X1, Y1), ?
+		    %% epx:draw_point(S#s.pix, X1, Y1), ?
 		    step_y(S,Y0,[Segment1|SegmentTail]);
 	       Y1 == Y0+1 ->
 		    [Segment1|SegmentTail];
@@ -1092,7 +1092,7 @@ plot_2_segments(S, As=[A|_], Bs=[B|_]) ->
     {Ax,Ay} = coord(A),
     {_Bx,By} = coord(B),
     Ay = By,  %% assert
-    epixmap:draw_point(S#s.pix, Ax, Ay),
+    epx:draw_point(S#s.pix, Ax, Ay),
     update(S),
     plot_2_segments_step(S, As, Bs).
 
@@ -1108,8 +1108,8 @@ plot_2_segments_step(S,As,Bs) ->
 	    {Ax,Ay} = coord(hd(As1)),
 	    {Bx,By} = coord(hd(Bs1)),
 	    if Ay == By ->
-		    epixmap:draw_point(S#s.pix, Ax, Ay),
-		    epixmap:draw_point(S#s.pix, Bx, By),
+		    epx:draw_point(S#s.pix, Ax, Ay),
+		    epx:draw_point(S#s.pix, Bx, By),
 		    update(S), 
 		    plot_2_segments_step(S, As1, Bs1);
 	       true ->
@@ -1146,7 +1146,7 @@ step_yx(S,Y0,[Segment|SegmentTail]) ->
 	    Segment1 = step(Segment),
 	    {X1,Y1} = coord(Segment1),
 	    if Y1 == Y0 ->
-		    epixmap:draw_point(S#s.pix, X1, Y1),
+		    epx:draw_point(S#s.pix, X1, Y1),
 		    update(S),
 		    step_yx(S,Y0,[Segment1|SegmentTail]);
 	       Y1 == Y0+1 ->
@@ -1169,7 +1169,7 @@ plot(S,F,Color) ->
 	    plota(S,F,Color);
        true ->
 	    {X,Y} = coord(F),
-	    epixmap:put_pixel(S#s.pix,X,Y,Color,[blend])
+	    epx:pixmap_put_pixel(S#s.pix,X,Y,Color,[blend])
     end.
 
 plota(S,F,Color) ->
@@ -1177,7 +1177,7 @@ plota(S,F,Color) ->
     {Sx,Sy} = aalias(F),
     Pix = S#s.pix,
     if Sx==0, Sy==0 ->
-	    epixmap:put_pixel(S#s.pix,X,Y,Color,[blend]);
+	    epx:pixmap_put_pixel(S#s.pix,X,Y,Color,[blend]);
        true ->
 	    Fx = if F#line.axis == ?AXIS_XY ->
 			 F#line.f - F#line.df - F#line.dx;
@@ -1206,7 +1206,7 @@ plota(S,F,Color) ->
 
 plotaa(Pix,X,Y,{R,G,B},A) when A >= 0, A =< 255 ->
     ColorA = {A,R,G,B},
-    epixmap:put_pixel(Pix,X,Y,ColorA,[blend]).
+    epx:pixmap_put_pixel(Pix,X,Y,ColorA,[blend]).
 
 
 
@@ -1223,8 +1223,9 @@ start(Func, W, H) ->
     epx:start(),
     Win = epx:window_create(50,50,W,H,[button_press,key_press]),
     epx:window_attach(Win),
-    [{_Delay,Image}|_] = epx_image:file(filename:join(code:priv_dir(epx),
-						      "erlang.png")),
+    {ok,Img} = epx_image:load(filename:join(code:priv_dir(epx_demo),
+					    "tony.png")),
+    [Image] = epx_image:pixmaps(Img),
     Pix = epx:pixmap_create(W,H,argb),
     epx:pixmap_attach(Pix),
 
@@ -1272,8 +1273,8 @@ loop(S) ->
     end.
 
 stop(S) ->
-    epx:pixmap_destroy(S#s.pix),
-    epx:window_destroy(S#s.win),
+    epx:pixmap_detach(S#s.pix),
+    epx:window_detach(S#s.win),
     ok.
 
 update(S) ->
@@ -1299,8 +1300,8 @@ draw_lrs(S, [LR|LRs], Offset) ->
     io:format("R0: ~p\n", [expand_segments(R)]),
     Left  = mk_segments(S, L),
     Right = mk_segments(S, R),
-    egc:set_line_style([blend]),
-    egc:set_foreground_color(C),
+    epx_gc:set_line_style([blend]),
+    epx_gc:set_foreground_color(C),
     try fill_2_segments(S,Left,Right) of
 	_ -> ok
     catch
@@ -1327,15 +1328,8 @@ round_rect(next, S) ->
     X = (S#s.width - W) div 2,
     Y = (S#s.height - H) div 2,
     io:format("X=~w, Y=~w, W=~w, H=~w, Rw=~w, Rh=~w\n", [X,Y,W,H,Rw,Rh]),
-    {L,R} = s_ellipse_rect(W, H, Rw, Rh),
-    io:format("L = ~p\n", [expand_segments(L)]),
-    io:format("R = ~p\n", [expand_segments(R)]),
-    L1 = offset_segments(L, {X,Y}),
-    R1 = offset_segments(R, {X,Y}),
-    Left  = mk_segments(S, L1),
-    Right = mk_segments(S, R1),
-    egc:set_foreground_color(S#s.fill1),
-    fill_2_segments(S,Left,Right),
+    LRs = s_ellipse_rect(W, H, Rw, Rh),
+    draw_lrs(S, LRs, {X,Y}),
     S.
 
 %%
@@ -1354,17 +1348,18 @@ segments(next, S) ->
     I = S#s.arg rem 11,
     io:format("~w: X=~w, Y=~w, W=~w, H=~w, Rw=~w, Rh=~w Bw=~w\n", 
 	      [I,X,Y,W,H,Rw,Rh,Bw]),
-    egc:draw(
+    epx_gc:draw(
       fun() ->
-	      {ok,{IW,IH}} = epixmap:get_size(S#s.image),
+	      IW = epx:pixmap_info(S#s.image, width),
+	      IH = epx:pixmap_info(S#s.image, height),
 	      XI = (S#s.width - IW)  div 2,
 	      YI = (S#s.height - IH) div 2,
-	      epixmap:copy_area(S#s.image, S#s.pix,
+	      epx:pixmap_copy_area(S#s.image, S#s.pix,
 				0, 0, XI, YI, IW, IH),
-	      egc:set_border_color({255,0,0}),
-	      %% egc:set_fill_color({255,0,0}),
-	      egc:set_fill_style([none]),
-	      epixmap:draw_rectangle(S#s.pix, X-1,Y-1,W+2,H+2)
+	      epx_gc:set_border_color({255,0,0}),
+	      %% epx_gc:set_fill_color({255,0,0}),
+	      epx_gc:set_fill_style([none]),
+	      epx:draw_rectangle(S#s.pix, X-1,Y-1,W+2,H+2)
       end),
     LRs = case I of
 	      0 ->

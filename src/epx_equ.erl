@@ -94,7 +94,7 @@ rect_height({_,_,_,H}) -> H.
 
 
 start() ->
-    start("2x+3=4x-4").
+    start("2 x+3=4 x-4").
 
 start(Equation) ->
     case erl_scan:string(Equation) of

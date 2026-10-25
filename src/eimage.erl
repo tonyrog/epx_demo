@@ -24,27 +24,49 @@ start(File) when is_list(File), is_integer(hd(File)) ->
 start(File,Transform) ->
     spawn(?MODULE, show1, [File, Transform]).
 
+image(IMG) -> image(IMG, [copy]).
+image(IMG, Transform) when is_record(IMG, epx_image) ->
+    spawn(?MODULE, show_img, [IMG, Transform]).
+    
+
 show1(File, Transform) ->
     epx:start(),
     case epx_image:load(File) of
 	{ok,Image} ->
-	    [Pixmap|_] = Image#epx_image.pixmaps,
-	    Width  = epx:pixmap_info(Pixmap, width),
-	    Height = epx:pixmap_info(Pixmap, height),
-	    Window = epx:window_create(50, 50, ?WIDTH, ?HEIGHT),
-	    Screen = epx:pixmap_create(Width, Height, argb),
-	    epx:window_attach(Window),
-	    epx:pixmap_attach(Screen),
-	    Sx = epx:pixmap_info(Screen, width) div 2,
-	    Sy = epx:pixmap_info(Screen, height) div 2,
-	    transform_loop(Transform, Pixmap, Sx, Sy, Screen, Window);
+	    show_img(Image, Transform);
 	Error ->
 	    io:format("Image load error: ~p\n", [Error])
     end.
+
+show_img(IMG, Transform) ->
+    [Pixmap0|_] = IMG#epx_image.pixmaps,
+    Width  = epx:pixmap_info(Pixmap0, width),
+    Height = epx:pixmap_info(Pixmap0, height),
+    Ratio = Height / Width,
+    Width1 = ?WIDTH,
+    Height1 = trunc(Width1 * Ratio),
+    Window = epx:window_create(50, 50, Width1, Height1),
+    Screen = epx:pixmap_create(Width, Height, argb),
+    epx:window_attach(Window),
+    epx:pixmap_attach(Screen),
+    Sx = epx:pixmap_info(Screen, width) div 2,
+    Sy = epx:pixmap_info(Screen, height) div 2,
+    transform_loop(normalize(Transform), Pixmap0, Sx, Sy, Screen, Window).
+
+%% command line style [rotate,'30',spin,'0','90'] => [{rotate,30},{spin,0,90}]
+normalize([rotate,A|T]) -> [{rotate,number(A)} | normalize(T)];
+normalize([spin,A,B|T]) -> [{spin,number(A),number(B)} | normalize(T)];
+normalize([T|Ts]) -> [T | normalize(Ts)];
+normalize([]) -> [].
+
+number(A) when is_number(A) -> A;
+number(A) when is_atom(A) -> number(atom_to_list(A));
+number(A) when is_list(A) ->
+    try list_to_integer(A) catch error:_ -> list_to_float(A) end.
 	    
 transform_loop(Transform, Pixmap, X, Y, Screen, Window) ->
     epx:pixmap_fill(Screen, {255,0,0,0}),
-    transform(Transform, Pixmap, X, Y, Screen),
+    transform(Transform, Pixmap, X, Y, Screen, Window),
     ScreenWidth  = epx:pixmap_info(Screen, width),
     ScreenHeight = epx:pixmap_info(Screen, height),
     epx:pixmap_draw(Screen, Window, 0, 0, 0, 0, ScreenWidth, ScreenHeight),
@@ -65,22 +87,34 @@ next_transform([{spin,From,To}|T]) when From < To -> [{spin,From+1,To}|T];
 next_transform([_|T]) -> T;
 next_transform([]) -> [].
 
-transform([], _Pixmap, _X, _Y, _Screen) ->
+transform([], _Pixmap, _X, _Y, _Screen, _Window) ->
     ok;
-transform([copy|_], Pixmap, X, Y, Screen) ->
-    Pw  = epx:pixmap_info(Pixmap, width),
-    Ph = epx:pixmap_info(Pixmap, height),
-    Cx = X - (Pw div 2),
-    Cy = Y - (Ph div 2),
-    epx:pixmap_copy_area(Pixmap, Screen, 0, 0, Cx, Cy, Pw, Ph, []);
-transform([lightmap|_], Pixmap, X, Y, Screen) ->
+transform([copy|_], Pixmap, X, Y, Screen, Window) ->
+    Dw = epx:window_info(Window, width),
+    Dh = epx:window_info(Window, height),
+
+    W  = epx:pixmap_info(Pixmap, width),
+    H = epx:pixmap_info(Pixmap, height),
+
+    R = H / W,
+    Width1 = ?WIDTH,
+    Height1 = trunc(Width1 * R),
+
+    Cx = X - (W div 2),
+    Cy = Y - (H div 2),
+    epx:pixmap_scale_area(Pixmap, Screen, Cx, Cy, Width1, Height1);
+%% epx:pixmap_copy_area(Pixmap, Screen, 0, 0, Cx, Cy, Pw, Ph, []);
+transform([lightmap|_], Pixmap, X, Y, Screen, _Window) ->
     %% calculate pixmap to light map ARGB => A
     Width  = epx:pixmap_info(Pixmap, width),
     Height = epx:pixmap_info(Pixmap, height),    
     Lmap = epx:pixmap_create(Width, Height, l8),
     epx:pixmap_copy_to(Pixmap, Lmap),
     LmapData = epx:pixmap_get_pixels(Lmap, 0, 0, Width, Height),
-    ArgbData = epx:pixmap_get_pixels(Pixmap, 0, 0, Width, Height),
+    %% the image may be rgb, l8 etc, convert to argb before unpacking
+    Argb = epx:pixmap_create(Width, Height, argb),
+    epx:pixmap_copy_to(Pixmap, Argb),
+    ArgbData = epx:pixmap_get_pixels(Argb, 0, 0, Width, Height),
     ZRGB = << <<0,R,G,B>> || <<_A,R,G,B>> <= ArgbData >>,
     Pixmap2 = epx:pixmap_create(Width, Height, argb),
     Cx = X - (Width div 2),
@@ -91,55 +125,29 @@ transform([lightmap|_], Pixmap, X, Y, Screen) ->
     epx:pixmap_put_pixels(Pixmap2, 0, 0, Width, Height, argb, ZRGB, []),
     epx:pixmap_put_pixels(Pixmap2, 0, 0, Width, Height, a8, LmapData, [sum]),
     epx:pixmap_copy_area(Pixmap2, Screen, 0, 0, Cx, Cy, Width, Height, [blend]);
-transform([vlines|_], Pixmap, _X, _Y, Screen) ->
+transform([vlines|_], Pixmap, _X, _Y, Screen, _Window) ->
     Width  = epx:pixmap_info(Pixmap, width),
     Height = epx:pixmap_info(Pixmap, height),
     Dst1 = epx:pixmap_create(Width, Height, l8),
     extract_vlines(Pixmap, Width, Height, Dst1),
     epx:pixmap_copy_to(Dst1, Screen);
-transform([hlines|_], Pixmap, _X, _Y, Screen) ->
+transform([hlines|_], Pixmap, _X, _Y, Screen, _Window) ->
     Width  = epx:pixmap_info(Pixmap, width),
     Height = epx:pixmap_info(Pixmap, height),
     Dst2 = epx:pixmap_create(Width, Height, l8),
     extract_hlines(Pixmap, Width, Height, Dst2),
     epx:pixmap_copy_to(Dst2, Screen);
 
-transform([spin,Angle,_EndAngle|T],Pixmap, X, Y, Screen) ->
-    transform([rotate,Angle|T],Pixmap, X, Y, Screen);
-transform([rotate,Arg|_], Pixmap, X, Y, Screen) ->
-    Angle = if is_number(Arg) -> Arg;
-	       is_atom(Arg) -> list_to_integer(atom_to_list(Arg))
-	    end,
+transform([{spin,Angle,_EndAngle}|T],Pixmap, X, Y, Screen, Window) ->
+    transform([{rotate,Angle}|T],Pixmap, X, Y, Screen, Window);
+transform([{rotate,Angle}|_], Pixmap, X, Y, Screen, _Window) ->
     Width  = epx:pixmap_info(Pixmap, width),
-    Height = epx:pixmap_info(Pixmap, height),    
-    XOffs = (Width div 2),
-    X0 =  -XOffs,
-    X1 = X0 + Width - 1,
-    YOffs = (Height div 2),
-    Y0 = -YOffs,
-    Y1 = Y0 + Height - 1,
-    Ai = trunc(Angle),
-    Ad = (Ai rem 360) + (Angle - Ai),
-    Ar = Ad*(2*math:pi() / 360),
-    CosA = math:cos(Ar),
-    SinA = math:sin(Ar),
-    rotate(Pixmap, X0, Y0, X1, Y1, X, Y, XOffs, YOffs, CosA, SinA, Screen).
-
-
-rotate(_Pixmap, _X0, Y0, _X1, Y1, _Xc, _Yc, _XOffs, _YOffs, _CosA, _SinA, _Screen) when Y0>Y1->
-    ok;
-rotate(Pixmap, X0, Y0, X1, Y1, Xc, Yc, XOffs, YOffs, CosA, SinA, Screen) ->
-    Px = trunc(X0*CosA - Y0*SinA + Xc),
-    Py = trunc(Y0*CosA + X0*SinA + Yc),
-
-    Qx = trunc(X1*CosA - Y0*SinA + Xc),
-    Qy = trunc(Y0*CosA + X1*SinA + Yc),
-    Tx0 = X0 + XOffs,
-    Tx1 = X1 + XOffs,
-    Ty = float(Y0+YOffs),
-    %% io:format("Ty = ~w\n", [Ty]),
-    epx:pixmap_tex_line(Screen, Px, Py, Qx, Qy, Pixmap, Tx0, Tx1, Ty),
-    rotate(Pixmap, X0, Y0+1, X1, Y1, Xc, Yc, XOffs, YOffs, CosA, SinA, Screen).
+    Height = epx:pixmap_info(Pixmap, height),
+    Ar = Angle*(2*math:pi() / 360),
+    %% rotate the image around its center and place it at (X,Y)
+    epx:pixmap_rotate_area(Pixmap, Screen, Ar, 0, 0,
+			   Width div 2, Height div 2, X, Y,
+			   Width, Height, [blend]).
 
 
 extract_vlines(Src, Width, Height, Dst) ->

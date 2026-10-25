@@ -1,7 +1,7 @@
 %%% @author Tony Rogvall <tony@rogvall.se>
 %%% @copyright (C) 2021, Tony Rogvall
 %%% @doc
-%%%    Demo showing partial update functio
+%%%    Demo showing partial update function
 %%% @end
 %%% Created : 20 Jan 2021 by Tony Rogvall <tony@rogvall.se>
 

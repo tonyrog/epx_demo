@@ -440,7 +440,7 @@ plot_value(G, Yi, X) ->
 	point ->
 	    epx:draw_point(G#epx_graph.pixels,X,Y1);
 	line -> %% fixme passin the previous value
-	    epx:draw_point(G#epx_graph.pixels,X-1,Y1,X,Y1);
+	    epx:draw_line(G#epx_graph.pixels,X-1,Y1,X,Y1);
 	histo ->
 	    epx:draw_line(G#epx_graph.pixels,X,Y0,X,Y1)
     end.
